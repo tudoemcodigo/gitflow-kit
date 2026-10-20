@@ -164,3 +164,13 @@ corpo y" qa/1.0.0-rc.1
   [ "$MODO_DEMO" = sim ]
   [ "$NOTIFICAR" = nenhum ]
 }
+
+@test "publicada ignora tags de decisao no mesmo commit" {
+  git tag -a qa.1 -m b HEAD
+  git push -q origin main qa.1
+  git push -q origin HEAD:refs/heads/qa
+  git fetch -q origin
+  git tag -a qa-ok/X-1.1 -m ok HEAD
+  [ "$(publicada qa)" = qa.1 ]
+  [ -z "$(publicada hom)" ]
+}

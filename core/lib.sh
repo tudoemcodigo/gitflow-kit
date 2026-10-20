@@ -95,7 +95,9 @@ espelhar() {   # iid rc: reescreve o label Ambiente::* (o label é só espelho)
 # PRs abertos para a main: "iid branch peso"; peso = ordem na fila do QA.
 # Pesos vêm dos labels (coluna labels_csv de pr_listar_abertos); reteste expresso vem das TAGS.
 mrs_abertos() {
-  pr_listar_abertos | while read -r I B LB; do
+  LISTA=$(pr_listar_abertos) || return 1
+  printf "%s\n" "$LISTA" | while read -r I B LB; do
+    [ -n "$I" ] || continue
     case ",$LB," in
       *,Suspeita\ de\ checagem,*) P=2 ;;
       *,Prioridade::1,*)          P=3 ;;
@@ -114,8 +116,8 @@ mrs_abertos() {
   done
 }
 
-publicada()        { git describe --tags --exact-match "origin/$1" 2> /dev/null; }
-ultima_build()     { git tag -l "$1.*" --sort=-creatordate | head -1; }        # última montada (qa ou hom)
+publicada()        { git tag --points-at "origin/$1" -l "$1.*" --sort=-refname --sort=-creatordate 2> /dev/null | head -1; }   # build publicada = tag do ambiente no commit de origin/AMB
+ultima_build()     { git tag -l "$1.*" --sort=-refname --sort=-creatordate | head -1; }        # última montada (qa ou hom)
 assunto()          { [ -z "$1" ] || git tag -l --format='%(contents:subject)' "$1"; }
 manifesto_de()     { [ -z "$1" ] || git tag -l --format='%(contents:body)' "$1"; }
 contem()           { awk -v r="$2" '$1 == r {f = 1} END {exit !f}' "$1"; }
@@ -134,7 +136,9 @@ aprovadas_vigentes() {
 }
 
 hotfix_aguardando_qa() {
-  mrs_abertos | while read -r _ SRC _; do
+  LISTA=$(mrs_abertos) || return 1
+  printf "%s\n" "$LISTA" | while read -r _ SRC _; do
+    [ -n "$SRC" ] || continue
     case "$SRC" in hotfix/*)
       RC=$(ultima_rc "$(id_da_branch "$SRC")")
       if [ -n "$RC" ] && [ "$(estado "$RC")" = teste ]; then echo "$SRC"; fi ;;

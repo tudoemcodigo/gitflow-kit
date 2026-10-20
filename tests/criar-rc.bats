@@ -268,3 +268,22 @@ avancar() {
   fake_labels 1 | grep -F "Reteste expresso"
   fake_labels 1 | grep -F "Ambiente::QA"
 }
+
+@test "MODO_DEMO nao dispensa pipeline vermelho e nao comenta aviso" {
+  pr_editar 1 '.reviews=[]'
+  fake_pipeline 1 "$(sha_de feature/PROJ-101-x)" failed
+  MODO_DEMO=sim rodar criar-rc.sh
+  assert_failure
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
+  ! fake_comentarios 1 | grep -F "MODO_DEMO"
+}
+
+@test "falha ao listar PRs abertos aborta sem criar tag" {
+  mkdir -p "$BATS_TEST_TMPDIR/kit/adapters/provider" "$BATS_TEST_TMPDIR/kit/core"
+  cp "$KIT_DIR/core/"*.sh "$BATS_TEST_TMPDIR/kit/core/"
+  cat "$KIT_DIR/adapters/provider/fake.sh" > "$BATS_TEST_TMPDIR/kit/adapters/provider/fake.sh"
+  echo 'pr_listar_abertos() { echo "provider fora do ar" >&2; return 1; }' >> "$BATS_TEST_TMPDIR/kit/adapters/provider/fake.sh"
+  KIT_DIR="$BATS_TEST_TMPDIR/kit" rodar criar-rc.sh
+  assert_failure
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
+}

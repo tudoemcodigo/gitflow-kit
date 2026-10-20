@@ -35,7 +35,9 @@ fi
 git fetch --quiet --force --tags origin main "$SRC"
 
 # 0. um ID, um MR; um hotfix por vez
-CONFLITO=$(mrs_abertos | while read -r I B _; do
+LISTA=$(mrs_abertos)
+CONFLITO=$(printf "%s\n" "$LISTA" | while read -r I B _; do
+  [ -n "$I" ] || continue
   [ "$I" != "$MR_IID" ] || continue
   [ "$(id_da_branch "$B")" != "$ID" ] || echo "!$I usa o mesmo ID $ID"
   case "$SRC:$B" in
@@ -64,9 +66,10 @@ done
   || recusa "o pipeline do último commit não está verde"
 
 # 3. code review: alguém que não é o autor, sobre o último commit
+DEMO_SEM_REVIEW=nao
 if ! aprovado_por_outro "$MR_IID" "$SHA" "$DONO"; then
   if [ "$MODO_DEMO" = sim ]; then
-    pr_comentar "$MR_IID" "⚠️ MODO_DEMO: code review de outra pessoa dispensado nesta entrega (só na demonstração)." || true
+    DEMO_SEM_REVIEW=sim
   else
     recusa "falta aprovação de code review (de outra pessoa, depois do último commit)"
   fi
@@ -97,6 +100,9 @@ TAG="rc/$ID.$(( ${N:-0} + 1 ))"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
 git $BOT tag -a "$TAG" "$SHA" -m "Entrega de $ID (MR !$MR_IID) por @$AUTOR"
 git push -q origin "refs/tags/$TAG"
+if [ "$DEMO_SEM_REVIEW" = sim ]; then
+  pr_comentar "$MR_IID" "⚠️ MODO_DEMO: code review de outra pessoa dispensado nesta entrega (só na demonstração)." || true
+fi
 
 # 7. espelho no PR: correção de algo reprovado (ou ajuste) ganha reteste expresso
 espelhar "$MR_IID" "$TAG"
