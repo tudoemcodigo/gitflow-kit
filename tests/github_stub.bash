@@ -61,14 +61,15 @@ while [ $# -gt 0 ]; do
     -o) out=$2; shift ;;
     -D) hdr=$2; shift ;;
     -w) shift ;;
-    -H) printf 'H %s\n' "$2" >> "$CURL_LOG"; shift ;;
+    -H) case "$2" in @*) h=$(cat "${2#@}") ;; *) h=$2 ;; esac
+        printf 'H %s\n' "$h" >> "$CURL_LOG"; printf 'A %s\n' "$2" >> "$CURL_LOG"; shift ;;
     --data-binary) corpo=$(cat); shift ;;
-    -sS | --fail-with-body) ;;
+    -sS) ;;
     *) url=$1 ;;
   esac
   shift
 done
-caminho=${url#"$GITHUB_API_URL"}
+caminho=${url#"${GITHUB_API_URL%/}"}
 nome=$(printf '%s' "${caminho#/}" | tr '/?&=' '____')
 printf 'R %s %s %s\n' "$m" "$caminho" "$corpo" >> "$CURL_LOG"
 base="$STUB_DIR/${m}_$nome"

@@ -11,13 +11,16 @@
 # a "/" inicial e com cada "/", "?", "&" e "=" trocado por "_". Paginas extras do gh_paginar: <nome>.p2.json, .p3.json...
 # Contrato (notas): release_criar e idempotente; "ultimo status" de um deployment = primeiro de /statuses que nao seja
 # `inactive` (o GitHub marca assim deployments substituidos por um mais novo); deployment sem status = running;
-# deploy_ultimo_ok/deploy_ok_anterior olham a primeira pagina (100) de deployments do ambiente.
+# deploy_ultimo_ok/deploy_ok_anterior paginam todos os deployments do ambiente.
 
 # shellcheck disable=SC2034  # lido pelo core (mensagens ao usuario)
 TERMO_PR=PR
 
 # jq em modo binario: no Windows (Git Bash) o jq emitiria CRLF e quebraria comparacoes.
 _gjq() { command jq -b "$@"; }
+
+# URL base da API, sem "/" final
+_gh_base() { _gb=${GITHUB_API_URL:-https://api.github.com}; printf '%s' "${_gb%/}"; }
 
 _gh_r() { printf '/repos/%s' "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY nao definido}"; }
 
@@ -32,10 +35,13 @@ gh_api() {
   _ga_p=$2
   _ga_b=${3:-}
   : "${GITHUB_TOKEN:?GITHUB_TOKEN nao definido}"
-  _ga_url="${GITHUB_API_URL:-https://api.github.com}$_ga_p"
+  _ga_url="$(_gh_base)$_ga_p"
   _ga_out=$(mktemp) || return 1
-  set -- -sS --fail-with-body -X "$_ga_m" -o "$_ga_out" -w '%{http_code}' \
-    -H "Authorization: Bearer $GITHUB_TOKEN" \
+  # o token vai em arquivo (modo 600), nunca no argv do curl (visivel em ps//proc)
+  _ga_auth=$(mktemp) || { rm -f "$_ga_out"; return 1; }
+  ( umask 077; printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" > "$_ga_auth" )
+  set -- -sS -X "$_ga_m" -o "$_ga_out" -w '%{http_code}' \
+    -H "@$_ga_auth" \
     -H 'Accept: application/vnd.github+json' \
     -H 'X-GitHub-Api-Version: 2022-11-28'
   if [ -n "${GH_HDR_FILE:-}" ]; then set -- "$@" -D "$GH_HDR_FILE"; fi
@@ -46,7 +52,7 @@ gh_api() {
     _ga_code=$(curl "$@" "$_ga_url" < /dev/null) || true
   fi
   cat "$_ga_out"
-  rm -f "$_ga_out"
+  rm -f "$_ga_out" "$_ga_auth"
   case "$_ga_code" in
     2??) return 0 ;;
     404) return 44 ;;
@@ -59,7 +65,7 @@ gh_api() {
 _gh_proximo() {
   _gx=$(tr -d '\015' < "$1" | grep -i '^link:' | tr ',' '\n' | grep 'rel="next"' \
     | sed -n 's/.*<\([^>]*\)>.*/\1/p' | head -n 1)
-  printf '%s' "${_gx#"${GITHUB_API_URL:-https://api.github.com}"}"
+  printf '%s' "${_gx#"$(_gh_base)"}"
 }
 
 gh_paginar() {
@@ -155,12 +161,12 @@ pr_fechar() {
   gh_api PATCH "$(_gh_r)/pulls/$1" '{"state":"closed"}' > /dev/null
 }
 
-# branch_apagar NOME : branch inexistente = sucesso
+# branch_apagar NOME : branch inexistente = sucesso (404, ou 422 "Reference does not exist")
 branch_apagar() {
-  gh_api DELETE "$(_gh_r)/git/refs/heads/$(_gh_enc "$1")" > /dev/null || {
-    _ba_rc=$?
-    [ "$_ba_rc" -eq 44 ] || [ "$_ba_rc" -eq 42 ]
-  }
+  _ba_o=$(gh_api DELETE "$(_gh_r)/git/refs/heads/$(_gh_enc "$1")") && return 0
+  _ba_rc=$?
+  [ "$_ba_rc" -ne 44 ] || return 0
+  [ "$_ba_rc" -eq 42 ] && printf '%s' "$_ba_o" | grep -qi 'reference does not exist'
 }
 
 # aprovado_por_outro IID SHA AUTOR : vale a ultima revisao decisiva de cada pessoa (APPROVED/CHANGES_REQUESTED/DISMISSED)
@@ -221,16 +227,17 @@ deploy_concluir() {
 # deploy_ultimo AMB -> "ref status"
 deploy_ultimo() {
   _du_d=$(gh_api GET "$(_gh_r)/deployments?environment=$(_gh_amb "$1")&per_page=1") || return 1
-  _du_id=$(printf '%s' "$_du_d" | _gjq -r '.[0].id // empty')
+  _du_id=$(printf '%s' "$_du_d" | _gjq -r '.[0].id // empty') || return 1
   [ -n "$_du_id" ] || return 0
-  _du_ref=$(printf '%s' "$_du_d" | _gjq -r '.[0].ref')
+  _du_ref=$(printf '%s' "$_du_d" | _gjq -r '.[0].ref') || return 1
   _du_st=$(_gh_status_dep "$_du_id") || return 1
   printf '%s %s\n' "$_du_ref" "$_du_st"
 }
 
-# _gh_deploys AMB : deployments do ambiente (mais novo primeiro; ate 100)
+# _gh_deploys AMB : deployments do ambiente (mais novo primeiro; todas as paginas, um array JSON)
 _gh_deploys() {
-  gh_api GET "$(_gh_r)/deployments?environment=$(_gh_amb "$1")&per_page=100"
+  _gd_d=$(gh_paginar "$(_gh_r)/deployments?environment=$(_gh_amb "$1")&per_page=100") || return 1
+  printf '%s' "$_gd_d" | _gjq -s -c '[.[][]]'
 }
 
 # _gh_primeiro_ok : le linhas "id ref" (mais novo primeiro) e imprime o ref do primeiro cujo status e success

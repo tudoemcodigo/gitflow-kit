@@ -128,8 +128,14 @@ log_tem() { grep -qxF -- "$1" "$GH_LOG"; }
   log_tem 'DELETE /repos/acme/app/git/refs/heads/feature/PROJ-1-x '
   gh_api() { return 44; }
   branch_apagar sumiu
-  gh_api() { return 42; }
+  gh_api() { echo '{"message":"Reference does not exist"}'; return 42; }
   branch_apagar sumiu
+}
+
+@test "branch_apagar: 422 com outra mensagem e erro" {
+  gh_api() { echo '{"message":"Validation Failed"}'; return 42; }
+  run branch_apagar x
+  [ "$status" -ne 0 ]
 }
 
 @test "branch_apagar propaga erro real" {
@@ -282,6 +288,23 @@ curl_setup() {
   grep -qxF 'R POST /repos/acme/app/releases {"a":"b c"}' "$CURL_LOG"
 }
 
+@test "gh_api nunca coloca o token no argv do curl (so em arquivo)" {
+  curl_setup
+  echo '{}' > "$STUB_DIR/GET_repos_acme_app_a.json"
+  gh_api GET /repos/acme/app/a > /dev/null
+  grep -qxF 'H Authorization: Bearer tok' "$CURL_LOG"
+  run grep '^A .*tok' "$CURL_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "gh_api aceita GITHUB_API_URL com barra final" {
+  curl_setup
+  GITHUB_API_URL=https://api.test/
+  echo '{}' > "$STUB_DIR/GET_repos_acme_app_a.json"
+  gh_api GET /repos/acme/app/a > /dev/null
+  grep -qxF 'R GET /repos/acme/app/a ' "$CURL_LOG"
+}
+
 @test "gh_api mapeia 404 em 44, 422 em 42 e outros erros em 1" {
   curl_setup
   run gh_api GET /repos/acme/app/nada
@@ -305,4 +328,31 @@ curl_setup() {
   run gh_paginar "/repos/acme/app/x?per_page=1"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | jq -s -c '[.[][].n]')" = "[1,2]" ]
+}
+
+@test "erros da API propagam: listar, comentarios, deploy_ultimo_ok" {
+  gh_paginar() { return 1; }
+  run pr_listar_abertos
+  [ "$status" -ne 0 ]
+  run pr_comentarios 11
+  [ "$status" -ne 0 ]
+  run deploy_ultimo_ok prd
+  [ "$status" -ne 0 ]
+  run deploy_ok_anterior prd v1.3.0
+  [ "$status" -ne 0 ]
+}
+
+@test "aprovado_por_outro devolve 2 em erro da API" {
+  gh_paginar() { return 1; }
+  run aprovado_por_outro 11 sha11 dev1
+  [ "$status" -eq 2 ]
+}
+
+@test "deploy_ultimo_ok pagina: success na segunda pagina e encontrado" {
+  gh_paginar() {
+    echo '[{"id":30,"ref":"v1.3.0"}]'
+    echo '[{"id":20,"ref":"v1.2.0"}]'
+  }
+  gh_api() { case "$2" in */deployments/30/*) echo '[{"state":"failure"}]' ;; *) echo '[{"state":"success"}]' ;; esac; }
+  [ "$(deploy_ultimo_ok prd)" = "v1.2.0" ]
 }
