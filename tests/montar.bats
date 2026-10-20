@@ -1,0 +1,279 @@
+#!/usr/bin/env bats
+load helper
+
+setup() {
+  setup_repo
+  export GITFLOW_SAIDA="$BATS_TEST_TMPDIR/saida" GITFLOW_RUN_ID=1 GITFLOW_LOCK_INTERVALO=1
+  export BUILD_USER_ID=tester
+  fake_membro rm1 release-managers
+  git -C "$WORK" config rerere.enabled false
+}
+
+# entrega IID ID [ARQUIVO CONTEUDO]: branch + PR + tag rc/ID.1 (anotada)
+entrega() {
+  local iid="$1" id="$2" arq="${3:-$2.txt}" conteudo="${4:-$2}"
+  git -C "$WORK" checkout -q -B "feature/$id-x" main
+  echo "$conteudo" > "$WORK/$arq"
+  git -C "$WORK" add "$arq"
+  git -C "$WORK" commit -q -m "feat: $id"
+  git -C "$WORK" push -q origin "feature/$id-x"
+  fake_pr "$iid" "feature/$id-x" dev
+  git -C "$WORK" tag -a "rc/$id.1" -m Entrega
+  git -C "$WORK" push -q origin "refs/tags/rc/$id.1"
+}
+# decidir TAGDEC ID: tag de decisao sobre a entrega
+decidir() {
+  git -C "$WORK" tag -a "$1/$2.1" -m x "rc/$2.1^{commit}"
+  git -C "$WORK" push -q origin "refs/tags/$1/$2.1"
+}
+tem_tag() { git -C "$ORIGIN" rev-parse -q --verify "refs/tags/$1" > /dev/null; }
+msg() { git -C "$ORIGIN" tag -l --format='%(contents)' "$1"; }
+saida_tag() { cat "$GITFLOW_SAIDA/montagem.tag"; }
+# publicar_build TAG: origin/<amb> aponta para o commit da tag
+publicar_build() {
+  git -C "$WORK" fetch -q --tags origin
+  git -C "$WORK" push -q -f origin "$1^{commit}:refs/heads/${1%%.*}"
+}
+HOJE() { date +%F; }
+
+@test "P5 main diferente de PRD" {
+  echo novo >> "$WORK/README.md"
+  git -C "$WORK" commit -q -am novo
+  git -C "$WORK" push -q origin main
+  rodar montar.sh qa
+  assert_failure
+  assert_output --partial "a main não é igual a PRD"
+}
+
+@test "P6 hom em modo release adia; FORCAR monta" {
+  git -C "$WORK" tag -a hom.2026-01-01.1 -m "Release 1.1.0"
+  git -C "$WORK" push -q origin hom.2026-01-01.1
+  publicar_build hom.2026-01-01.1
+  rodar montar.sh hom
+  assert_success
+  assert_output --partial "montagem adiada"
+  [ -z "$(saida_tag)" ]
+  FORCAR=true rodar montar.sh hom
+  assert_success
+  [ "$(saida_tag)" = "hom.$(HOJE).1" ]
+  tem_tag "hom.$(HOJE).1"
+}
+
+@test "P7 hotfix em teste reserva o QA; hotfix so por release manager" {
+  git -C "$WORK" checkout -q -B hotfix/2.5.1 main
+  echo h > "$WORK/h.txt"; git -C "$WORK" add h.txt; git -C "$WORK" commit -q -m h
+  git -C "$WORK" push -q origin hotfix/2.5.1
+  fake_pr 9 hotfix/2.5.1 dev
+  git -C "$WORK" tag -a rc/hotfix-2-5-1.1 -m x
+  git -C "$WORK" push -q origin refs/tags/rc/hotfix-2-5-1.1
+  rodar montar.sh qa
+  assert_success
+  assert_output --partial "QA reservado"
+  [ -z "$(saida_tag)" ]
+  HOTFIX=2.5.1 rodar montar.sh hotfix
+  assert_failure
+  assert_output --partial "é só para release-managers"
+  BUILD_USER_ID=rm1 HOTFIX=2.5.1 rodar montar.sh hotfix
+  assert_success
+  tag=$(saida_tag)
+  [ "$tag" = "qa.$(HOJE).1" ]
+  msg "$tag" | grep -Fx "Hotfix 2.5.1"
+  msg "$tag" | grep -F "rc/hotfix-2-5-1.1 !9 "
+  FORCAR=true rodar montar.sh qa
+  assert_success
+  [ "$(saida_tag)" = "qa.$(HOJE).2" ]
+}
+
+@test "release por nao release manager e recusado; versao invalida" {
+  VERSAO=1.1.0 rodar montar.sh release
+  assert_failure
+  assert_output --partial "é só para release-managers"
+  BUILD_USER_ID=rm1 VERSAO=1.1 rodar montar.sh release
+  assert_failure
+  assert_output --partial "VERSAO inválida"
+}
+
+@test "selecao: QA = homologadas+aprovadas+teste; HOM sem teste; release so homologadas" {
+  entrega 1 PROJ-1; decidir qa-ok PROJ-1; decidir hom-ok PROJ-1
+  entrega 2 PROJ-2; decidir qa-ok PROJ-2
+  entrega 3 PROJ-3
+  rodar montar.sh qa
+  assert_success
+  m=$(msg "$(saida_tag)")
+  echo "$m" | grep -Fx "Build qa"
+  echo "$m" | grep -E '^base main [0-9a-f]+ \(v1\.0\.0\)$'
+  echo "$m" | grep -E '^rerere nenhum$'
+  echo "$m" | grep -E '^rc/PROJ-1\.1 !1 [0-9a-f]+ homologada$'
+  echo "$m" | grep -E '^rc/PROJ-2\.1 !2 [0-9a-f]+ aprovada QA$'
+  echo "$m" | grep -E '^rc/PROJ-3\.1 !3 [0-9a-f]+ em teste$'
+  [ "$(fake_labels 3)" = "Ambiente::QA" ]
+  rodar montar.sh hom
+  assert_success
+  m=$(msg "$(saida_tag)")
+  echo "$m" | grep -F "rc/PROJ-1.1 !1"
+  echo "$m" | grep -F "rc/PROJ-2.1 !2"
+  ! echo "$m" | grep -F "rc/PROJ-3.1"
+  BUILD_USER_ID=rm1 VERSAO=1.1.0 rodar montar.sh release
+  assert_success
+  m=$(msg "$(saida_tag)")
+  echo "$m" | grep -Fx "Release 1.1.0"
+  echo "$m" | grep -F "rc/PROJ-1.1 !1"
+  ! echo "$m" | grep -F "rc/PROJ-2.1"
+  ! echo "$m" | grep -F "rc/PROJ-3.1"
+}
+
+@test "fila: limite, lugar mantido, suspeita volta sozinha, rotulos" {
+  export LIMITE_QA=1
+  entrega 1 PROJ-1; sleep 1
+  entrega 2 PROJ-2; sleep 1
+  entrega 3 PROJ-3
+  rodar montar.sh qa
+  assert_success
+  tag=$(saida_tag)
+  msg "$tag" | grep -F "rc/PROJ-1.1 !1"
+  ! msg "$tag" | grep -E "^rc/PROJ-[23]"
+  msg "$tag" | grep -F "fila: rc/PROJ-2.1 !2 posição 1"
+  msg "$tag" | grep -F "fila: rc/PROJ-3.1 !3 posição 2"
+  [ "$(fake_labels 2)" = "Ambiente::QA,Montagem::Fila" ] || [ "$(fake_labels 2)" = "Montagem::Fila" ]
+  fake_labels 2 | grep -F "Montagem::Fila"
+  fake_comentarios 3 | grep -F "⏳ Na fila do QA (posição 2) na montagem $tag."
+  # quem ja esta publicado mantem o lugar
+  publicar_build "$tag"
+  rodar montar.sh qa
+  assert_success
+  assert_output --partial "nada mudou"
+  # suspeita de checagem volta sozinha
+  fake_pr 3 feature/PROJ-3-x dev
+  pr_rotular 3 "Suspeita de checagem" ""
+  rodar montar.sh qa
+  assert_success
+  tag2=$(saida_tag)
+  [ "$tag2" = "qa.$(HOJE).2" ]
+  msg "$tag2" | grep -F "rc/PROJ-1.1 !1"
+  msg "$tag2" | grep -F "rc/PROJ-3.1 !3"
+  ! msg "$tag2" | grep -E "^rc/PROJ-2"
+  msg "$tag2" | grep -F "fila: rc/PROJ-2.1 !2 posição 1"
+  fake_labels 3 | grep -v "Montagem::Fila" > /dev/null
+}
+
+@test "corte de 30 min so na agendada" {
+  entrega 1 PROJ-1
+  BUILD_USER_ID=timer rodar montar.sh qa
+  assert_success
+  ! msg "$(saida_tag)" | grep -F "rc/PROJ-1.1"
+  BUILD_USER_ID=tester rodar montar.sh qa
+  assert_success
+  msg "$(saida_tag)" | grep -F "rc/PROJ-1.1 !1"
+  # entrega antiga entra mesmo na agendada
+  git -C "$WORK" checkout -q -B feature/PROJ-2-x main
+  echo 2 > "$WORK/2.txt"; git -C "$WORK" add 2.txt; git -C "$WORK" commit -q -m 2
+  git -C "$WORK" push -q origin feature/PROJ-2-x
+  fake_pr 2 feature/PROJ-2-x dev
+  GIT_COMMITTER_DATE="2020-01-01T00:00:00" git -C "$WORK" tag -a rc/PROJ-2.1 -m x
+  git -C "$WORK" push -q origin refs/tags/rc/PROJ-2.1
+  BUILD_USER_ID= rodar montar.sh qa
+  assert_success
+  msg "$(saida_tag)" | grep -F "rc/PROJ-2.1 !2"
+}
+
+@test "conflito em teste fica fora com label; em aprovada para (P4)" {
+  entrega 1 PROJ-1 README.md um
+  entrega 2 PROJ-2 README.md dois
+  decidir qa-ok PROJ-1
+  rodar montar.sh qa
+  assert_success
+  tag=$(saida_tag)
+  msg "$tag" | grep -F "rc/PROJ-1.1 !1"
+  msg "$tag" | grep -Fx "fora: rc/PROJ-2.1 !2 conflito"
+  ! msg "$tag" | grep -E "^rc/PROJ-2"
+  fake_labels 2 | grep -F "Montagem::Conflito"
+  fake_comentarios 2 | grep -F "⚠️ rc/PROJ-2.1 conflitou na montagem $tag e ficou fora."
+  decidir qa-ok PROJ-2
+  rodar montar.sh qa
+  assert_failure
+  assert_output --partial "conflito em entrega aprovada"
+}
+
+@test "P3 entrega aprovada com PR fechado para a montagem" {
+  entrega 1 PROJ-1; decidir qa-ok PROJ-1
+  pr_fechar 1
+  rodar montar.sh qa
+  assert_failure
+  assert_output --partial "entregas aprovadas fora da build sem motivo: rc/PROJ-1.1"
+  [ -z "$(saida_tag)" ]
+}
+
+@test "nada mudou sai sem tag; segunda montagem do dia vira .2" {
+  entrega 1 PROJ-1
+  rodar montar.sh qa
+  assert_success
+  t1=$(saida_tag)
+  [ "$t1" = "qa.$(HOJE).1" ]
+  publicar_build "$t1"
+  rodar montar.sh qa
+  assert_success
+  assert_output --partial "nada mudou desde $t1"
+  [ -z "$(saida_tag)" ]
+  ! tem_tag "qa.$(HOJE).2"
+  entrega 2 PROJ-2
+  rodar montar.sh qa
+  assert_success
+  [ "$(saida_tag)" = "qa.$(HOJE).2" ]
+  [ "$(git -C "$ORIGIN" cat-file -t "qa.$(HOJE).2")" = tag ]
+}
+
+@test "fluxo agendado com montagem-qa ocupado adia sem tag" {
+  GITFLOW_RUN_ID=outro sh -c 'cd "$1" && "$2" pegar montagem-qa' _ "$WORK" "$KIT_DIR/core/lock.sh"
+  entrega 1 PROJ-1
+  BUILD_USER_ID=timer GITFLOW_RUN_ID=2 rodar fluxo-montar.sh qa
+  assert_success
+  assert_output --partial "adiada: qa aguardando run=outro"
+  [ -z "$(saida_tag)" ]
+  ! tem_tag "qa.$(HOJE).1"
+}
+
+@test "fluxo: com tag mantem montagem-qa e solta comandos; sem tag solta tudo" {
+  entrega 1 PROJ-1
+  rodar fluxo-montar.sh qa
+  assert_success
+  tag=$(saida_tag)
+  [ "$tag" = "qa.$(HOJE).1" ]
+  [ "$(cat "$GITFLOW_SAIDA/lock-montagem")" = montagem-qa ]
+  git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/montagem-qa
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos
+  GITFLOW_RUN_ID=1 sh -c 'cd "$1" && "$2" soltar montagem-qa' _ "$WORK" "$KIT_DIR/core/lock.sh"
+  publicar_build "$tag"
+  rodar fluxo-montar.sh qa
+  assert_success
+  assert_output --partial "nada mudou"
+  [ -z "$(saida_tag)" ]
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/montagem-qa
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos
+}
+
+@test "rerere: resolucao publicada em meta/rerere faz a entrega em teste entrar" {
+  entrega 1 PROJ-1 README.md um; sleep 1
+  entrega 2 PROJ-2 README.md dois
+  rodar montar.sh qa
+  assert_success
+  msg "$(saida_tag)" | grep -Fx "fora: rc/PROJ-2.1 !2 conflito"
+  # reproduz localmente, resolve e publica
+  rodar resolver-conflito.sh qa
+  assert_success
+  assert_output --partial "Conflito ao mesclar rc/PROJ-2.1"
+  echo resolvido > "$WORK/README.md"
+  git -C "$WORK" add README.md
+  git -C "$WORK" -c user.name=t -c user.email=t@e commit -q --no-edit
+  rodar resolver-conflito.sh --publicar
+  assert_success
+  git -C "$ORIGIN" rev-parse -q --verify refs/heads/meta/rerere
+  ! tem_tag "qa.$(HOJE).9"
+  rm -rf "$WORK/.git/rr-cache"
+  rodar montar.sh qa
+  assert_success
+  tag=$(saida_tag)
+  msg "$tag" | grep -E '^rc/PROJ-2\.1 !2 [0-9a-f]+ em teste$'
+  msg "$tag" | grep -Fx "rerere: rc/PROJ-2.1"
+  msg "$tag" | grep -E '^rerere [0-9a-f]+$'
+  [ "$(git -C "$ORIGIN" tag -l | grep -c '^qa\.')" -eq 2 ]
+}
