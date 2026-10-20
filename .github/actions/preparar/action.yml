@@ -62,6 +62,12 @@ runs:
             "${GITHUB_API_URL:-https://api.github.com}/users/${APP_SLUG}%5Bbot%5D" | jq -r '.id // empty') || BID=
           if [ -n "$BID" ]; then EMAIL="${BID}+${APP_SLUG}[bot]@users.noreply.github.com"; else EMAIL="${APP_SLUG}[bot]@users.noreply.github.com"; fi
         fi
+        # credencial do git so por ambiente (nada gravado em .git/config); a mascara sai no stdout, nunca no arquivo de env
+        B64=
+        if [ -n "$APP_TOKEN" ]; then
+          B64=$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$B64"
+        fi
         {
           # so run_id: "Re-run failed jobs" mantem o dono dos locks (a tentativa vai em GITFLOW_RUN_URL)
           echo "GITFLOW_RUN_ID=${RUN_ID}"
@@ -80,9 +86,6 @@ runs:
             echo "GIT_COMMITTER_EMAIL=$EMAIL"
           fi
           if [ -n "$APP_TOKEN" ]; then
-            # credencial do git so por ambiente (nada gravado em .git/config)
-            B64=$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 | tr -d '\n')
-            echo "::add-mask::$B64"
             echo "GIT_CONFIG_COUNT=1"
             echo "GIT_CONFIG_KEY_0=http.extraHeader"
             echo "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64"

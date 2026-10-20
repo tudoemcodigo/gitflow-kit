@@ -169,3 +169,14 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
 @test "comandos so aceita OWNER/MEMBER/COLLABORATOR" {
   grep -q 'author_association' "$WF/gitflow-comandos.yml"
 }
+
+@test "::add-mask:: nunca fica dentro do grupo redirecionado para GITHUB_ENV" {
+  a="$KIT_DIR/.github/actions/preparar/action.yml"
+  grep -q '::add-mask::' "$a"
+  run awk '
+    /^[[:space:]]*\{[[:space:]]*$/ { g = 1; next }
+    g && /\}[[:space:]]*>>[[:space:]]*"\$GITHUB_ENV"/ { g = 0; next }
+    g && /::add-mask::/ { print NR ": " $0; bad = 1 }
+    END { exit bad }' "$a"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}

@@ -184,3 +184,40 @@ corpo y" qa/1.0.0-rc.1
   [ "$(ultima_build qa)" = qa.2026-10-14.10 ]
   [ "$(publicada qa)" = qa.2026-10-14.10 ]
 }
+
+@test "carregar_config: .gitflow.env e lido literalmente (sem eval, sem expansao)" {
+  rm -f "$BATS_TEST_TMPDIR/marker" "$BATS_TEST_TMPDIR/marker2"
+  {
+    printf 'XA=$(touch %s/marker)\n' "$BATS_TEST_TMPDIR"
+    printf 'XB=`touch %s/marker2`\n' "$BATS_TEST_TMPDIR"
+    printf 'XC="com aspas $HOME"\n'
+    printf "XD='simples'\n"
+    printf 'x_minuscula=1\n'
+    printf 'XE; touch %s/marker=1\n' "$BATS_TEST_TMPDIR"
+  } > .gitflow.env
+  unset XA XB XC XD x_minuscula
+  carregar_config
+  [ ! -e "$BATS_TEST_TMPDIR/marker" ]
+  [ ! -e "$BATS_TEST_TMPDIR/marker2" ]
+  [ "$XA" = "\$(touch $BATS_TEST_TMPDIR/marker)" ]
+  [ "$XB" = "\`touch $BATS_TEST_TMPDIR/marker2\`" ]
+  [ "$XC" = 'com aspas $HOME' ]
+  [ "$XD" = simples ]
+  [ -z "${x_minuscula:-}" ]
+}
+
+@test "carregar_config: nome de adaptador com / ou . e recusado" {
+  echo "ARTEFATOS=../../x" > .gitflow.env
+  unset ARTEFATOS
+  run carregar_config
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ARTEFATOS inválido"* ]]
+  printf 'DEPLOY=a.b\n' > .gitflow.env
+  unset ARTEFATOS DEPLOY
+  run carregar_config
+  [ "$status" -ne 0 ]
+  echo "NOTIFICAR=x/y" > .gitflow.env
+  unset DEPLOY NOTIFICAR
+  run carregar_config
+  [ "$status" -ne 0 ]
+}

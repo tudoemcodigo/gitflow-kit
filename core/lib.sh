@@ -15,15 +15,23 @@ kit_dir() {
 }
 
 carregar_config() {
-  # o ambiente vence o .gitflow.env: valor do arquivo só vale se a variável ainda não existe
+  # .gitflow.env vem da aplicação (não confiável): leitura literal, sem eval do conteúdo nem expansão.
+  # Só linhas CHAVE=VALOR com CHAVE em [A-Z_][A-Z0-9_]*; aspas externas (simples ou duplas) são removidas.
+  # O ambiente vence o arquivo: valor do arquivo só vale se a variável ainda não existe.
   if [ -f .gitflow.env ]; then
     while IFS= read -r _l || [ -n "$_l" ]; do
       _l=$(printf '%s' "$_l" | tr -d '\015')
-      case "$_l" in [A-Za-z_]*=*) ;; *) continue ;; esac
+      case "$_l" in [A-Z_]*=*) ;; *) continue ;; esac
       _k=${_l%%=*}
-      case "$_k" in *[!A-Za-z0-9_]*) continue ;; esac
+      case "$_k" in '' | *[!A-Z0-9_]*) continue ;; esac
+      _v=${_l#*=}
+      case "$_v" in
+        \"*\") _v=${_v#\"}; _v=${_v%\"} ;;
+        \'*\') _v=${_v#\'}; _v=${_v%\'} ;;
+      esac
+      # só o NOME (validado acima) entra no eval; o valor vai por variável
       if eval "[ -z \"\${$_k+x}\" ]"; then
-        eval "$_l"
+        eval "$_k=\$_v"
         export "${_k?}"
       fi
     done < .gitflow.env
@@ -34,6 +42,14 @@ carregar_config() {
   : "${NOTIFICAR:=console}"
   : "${GITFLOW_PROVIDER:?GITFLOW_PROVIDER não definido}"
   export LIMITE_QA ID_REGEX MODO_DEMO NOTIFICAR GITFLOW_PROVIDER
+  # nomes de adaptador viram caminho de arquivo: só [a-z0-9-] (sem / nem .)
+  for _n in GITFLOW_PROVIDER NOTIFICAR ARTEFATOS DEPLOY; do
+    _nv=
+    eval "_nv=\${$_n:-}"
+    case "$_nv" in
+      *[!a-z0-9-]*) para "$_n inválido: '$_nv' (use só letras minúsculas, dígitos e hífen)." ;;
+    esac
+  done
   _kd=$(kit_dir)
   # shellcheck source=/dev/null
   . "$_kd/adapters/provider/$GITFLOW_PROVIDER.sh"
