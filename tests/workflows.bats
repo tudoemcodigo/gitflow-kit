@@ -117,7 +117,7 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
   for j in preparar construir testar publicar-pacote gates aprovacao implantar checagem registrar falhou; do
     [ -n "$(job_bloco "$f" $j)" ]
   done
-  job_bloco "$f" aprovacao | grep -q 'environment: production'
+  job_bloco "$f" aprovacao | grep -q 'environment: aprovacao-prd'
   job_bloco "$f" checagem | grep -q 'environment: checagem-${{ inputs.AMBIENTE }}'
   job_bloco "$f" checagem | grep -q "needs.verificar.outputs.verificar == 'MANUAL'"
   job_bloco "$f" falhou | grep -q 'failure()'
@@ -179,4 +179,10 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
     g && /::add-mask::/ { print NR ": " $0; bad = 1 }
     END { exit bad }' "$a"
   [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "nenhum job declara environment production, qa ou hom (so deployments da API do kit)" {
+  for f in $(reutilizaveis) "$CH"/*.yml; do
+    nao_tem_arq "$f" '^[[:space:]]*environment:[[:space:]]*(production|qa|hom)[[:space:]]*$'
+  done
 }

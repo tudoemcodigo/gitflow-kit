@@ -1,0 +1,15 @@
+Ambiente::QA	1d76db	Em QA (escrito só pelo bot)
+Ambiente::QA reprovado	d93f0b	Reprovado em QA
+Ambiente::HOM	0e8a16	Em HOM
+Ambiente::HOM reprovado	b60205	Reprovado em HOM
+Ambiente::Homologado	0e8a16	Homologado, aguardando PRD
+Ambiente::PRD	5319e7	Em produção
+Ambiente::Hotfix	e11d21	Correção urgente em produção
+Ambiente::Retirada	6a737d	Retirado da entrega
+Montagem::Conflito	fbca04	Conflito na montagem do ambiente
+Montagem::Fila	c5def5	Na fila para a próxima montagem
+Suspeita de checagem	fef2c0	Tester de plantão suspeita da checagem automática
+Reteste expresso	bfdadc	Reteste priorizado pelas tags de decisão
+Prioridade::1	b60205	Prioridade alta
+Prioridade::2	fbca04	Prioridade média
+Prioridade::3	0e8a16	Prioridade baixa

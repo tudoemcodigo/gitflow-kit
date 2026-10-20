@@ -1,5 +1,5 @@
 # Modelo de chamador do GitFlow Kit: copie para .github/workflows/gitflow.yml da aplicacao.
-# Pre-requisitos: secrets GITFLOW_APP_ID e GITFLOW_APP_KEY (org), Environments production e checagem-<amb>, Teams (docs do kit).
+# Pre-requisitos: secrets GITFLOW_APP_ID e GITFLOW_APP_KEY (org), Environments aprovacao-prd, checagem-<amb> (e qa, hom, production sem revisores; setup/github.sh), Teams (docs do kit).
 # O nome deste arquivo e o valor de `montar-workflow` (a esteira o dispara depois do PRD); se o renomear, passe
 # `with: montar-workflow: <arquivo>` nos jobs montar/release/promover-hotfix/esteira.
 name: gitflow

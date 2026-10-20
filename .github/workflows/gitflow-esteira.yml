@@ -187,11 +187,11 @@ jobs:
     needs: gates
     if: inputs.AMBIENTE == 'prd'
     runs-on: ubuntu-latest
-    environment: production
+    environment: aprovacao-prd
     permissions: {}
     steps:
-      - name: Aprovado pelo Environment production
-        run: echo "Aprovacao de $TAG para PRD registrada pelo Environment production."
+      - name: Aprovado pelo Environment aprovacao-prd
+        run: echo "Aprovacao de $TAG para PRD registrada pelo Environment aprovacao-prd."
 
   implantar:
     needs: [gates, aprovacao]
