@@ -160,8 +160,9 @@ if [ "$LOCAL" = sim ]; then sai "Montagem reproduzida sem conflitos (nada foi pu
 
 # nada mudou? (mesma base e mesmas entregas da build publicada)
 if [ "$ALVO" = qa ] || [ "$ALVO" = hom ]; then
-  NOVO=$(grep -E '^(base|rerere|rc/)' "$TMP/manifesto" || true)
-  ANTES=$(grep -E '^(base|rerere|rc/)' "$TMP/publicado" || true)
+  # entregas: só o nome conta (a mesma entrega que passou de "em teste" para "aprovada QA" não muda a build)
+  NOVO=$(awk '/^rc\// {print $1; next} /^(base|rerere)/' "$TMP/manifesto")
+  ANTES=$(awk '/^rc\// {print $1; next} /^(base|rerere)/' "$TMP/publicado")
   [ "$NOVO" != "$ANTES" ] || sai "nada mudou desde $PUB."
 fi
 

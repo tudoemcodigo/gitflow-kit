@@ -202,6 +202,19 @@ HOJE() { date +%F; }
   [ -z "$(saida_tag)" ]
 }
 
+@test "nada mudou mesmo quando a entrega publicada passou de em teste para aprovada" {
+  entrega 1 PROJ-1
+  rodar montar.sh qa
+  assert_success
+  t1=$(saida_tag)
+  publicar_build "$t1"
+  decidir qa-ok PROJ-1
+  rodar montar.sh qa
+  assert_success
+  assert_output --partial "nada mudou desde $t1"
+  [ -z "$(saida_tag)" ]
+}
+
 @test "nada mudou sai sem tag; segunda montagem do dia vira .2" {
   entrega 1 PROJ-1
   rodar montar.sh qa
