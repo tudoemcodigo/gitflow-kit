@@ -308,3 +308,26 @@ HOJE() { date +%F; }
   tem_tag "qa.$(HOJE).1"
   assert_output --partial "AVISO"
 }
+
+@test "rerere: publicar nao descarta resolucoes ja publicadas" {
+  entrega 1 PROJ-1 README.md um; sleep 1
+  entrega 2 PROJ-2 README.md dois
+  rodar resolver-conflito.sh qa
+  assert_success
+  echo resolvido > "$WORK/README.md"
+  git -C "$WORK" add README.md
+  git -C "$WORK" -c user.name=t -c user.email=t@e commit -q --no-edit
+  rodar resolver-conflito.sh --publicar
+  assert_success
+  A=$(ls "$WORK/.git/rr-cache" | head -1)
+  [ -n "$A" ]
+  # clone sem A: so a resolucao B local
+  rm -rf "$WORK/.git/rr-cache"
+  mkdir -p "$WORK/.git/rr-cache/bbbb0000"
+  echo pre > "$WORK/.git/rr-cache/bbbb0000/preimage"
+  echo pos > "$WORK/.git/rr-cache/bbbb0000/postimage"
+  rodar resolver-conflito.sh --publicar
+  assert_success
+  git -C "$ORIGIN" ls-tree --name-only refs/heads/meta/rerere | grep -Fx "$A"
+  git -C "$ORIGIN" ls-tree --name-only refs/heads/meta/rerere | grep -Fx bbbb0000
+}

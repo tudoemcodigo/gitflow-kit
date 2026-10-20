@@ -55,7 +55,7 @@ outra_entrega() {
   AUTOR=neg1 NOTA="/aprovar" rodar decidir.sh
   assert_failure
   refuso /aprovar "@neg1 não pertence a"
-  ! tem_tag qa-ok/PROJ-101.1
+  ! tem_tag qa-ok/PROJ-101.1 || false
 }
 
 @test "reprovar sem motivo" {
@@ -88,7 +88,7 @@ outra_entrega() {
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
   refuso /aprovar "a entrega rc/PROJ-101.1 não está na build publicada e verificada em qa"
-  ! tem_tag qa-ok/PROJ-101.1
+  ! tem_tag qa-ok/PROJ-101.1 || false
 }
 
 @test "P2 deployment running (nao verificado) recusa aprovar" {
@@ -105,7 +105,7 @@ outra_entrega() {
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
   refuso /aprovar "não está na build publicada e verificada"
-  ! tem_tag qa-ok/PROJ-101.1
+  ! tem_tag qa-ok/PROJ-101.1 || false
 }
 
 @test "P2 deployment de outra build recusa aprovar" {
@@ -144,7 +144,7 @@ outra_entrega() {
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
   refuso /aprovar "a entrega rc/PROJ-101.2 não está na build publicada e verificada em qa"
-  ! tem_tag qa-ok/PROJ-101.2
+  ! tem_tag qa-ok/PROJ-101.2 || false
 }
 
 @test "transicao: qa-nok sobre qa-ok permitido" {
@@ -163,7 +163,7 @@ outra_entrega() {
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
   refuso /aprovar "a entrega rc/PROJ-101.1 está em 'qa-nok'; /aprovar não se aplica"
-  ! tem_tag qa-ok/PROJ-101.1
+  ! tem_tag qa-ok/PROJ-101.1 || false
 }
 
 @test "transicao: hom-ok sobre teste recusado" {

@@ -121,7 +121,7 @@ corpo y" qa/1.0.0-rc.1
   [ "$(ultima_build qa/1.0.0-rc)" = qa/1.0.0-rc.1 ]
   printf 'rc/A-1.1 x\n' > m.txt
   contem m.txt rc/A-1.1
-  ! contem m.txt rc/A-1.2
+  ! contem m.txt rc/A-1.2 || false
   tag rc/A-1.1; tag qa-ok/A-1.1
   run sh -c ". '$KIT_DIR/core/lib.sh'; printf 'rc/A-1.1 1 t\n' | ordenar_por_data qa-ok"
   assert_output "rc/A-1.1 1 t"

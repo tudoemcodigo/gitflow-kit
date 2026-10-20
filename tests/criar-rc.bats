@@ -236,7 +236,7 @@ avancar() {
   rodar criar-rc.sh
   assert_failure
   refuso | grep -F "/entregar confirmo"
-  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.2
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.2 || false
 }
 
 @test "anterior qa-ok com confirmo cria .2" {
@@ -277,8 +277,8 @@ avancar() {
 x"
   MODO_DEMO=sim rodar criar-rc.sh
   assert_failure
-  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
-  ! fake_comentarios 1 | grep -F "MODO_DEMO"
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1 || false
+  ! fake_comentarios 1 | grep -F "MODO_DEMO" || false
 }
 
 @test "falha ao listar PRs abertos aborta sem criar tag" {
@@ -288,7 +288,7 @@ x"
   echo 'pr_listar_abertos() { echo "provider fora do ar" >&2; return 1; }' >> "$BATS_TEST_TMPDIR/kit/adapters/provider/fake.sh"
   KIT_DIR="$BATS_TEST_TMPDIR/kit" rodar criar-rc.sh
   assert_failure
-  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1 || false
 }
 
 @test "MODO_DEMO sem review: aviso so apos a tag" {

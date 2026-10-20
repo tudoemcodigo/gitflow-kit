@@ -23,7 +23,7 @@ case "${1:-}" in
     export GIT_INDEX_FILE="$TMP/index"
     PAI=$(git rev-parse -q --verify origin/meta/rerere || true)
     if [ -n "$PAI" ]; then git read-tree "$PAI"; fi   # parte da árvore publicada: não perde resoluções antigas
-    git --work-tree="$GD/rr-cache" add -A -f .
+    git --work-tree="$GD/rr-cache" add --ignore-removal -f .
     TREE=$(git write-tree)
     # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
     C=$(git $BOT commit-tree "$TREE" ${PAI:+-p "$PAI"} -m "rerere: resoluções publicadas")
