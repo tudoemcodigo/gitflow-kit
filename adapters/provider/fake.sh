@@ -30,7 +30,7 @@ fake_pr() {
   _fake_init
   _fp_draft=false
   [ "${4:-}" = "draft" ] && _fp_draft=true
-  _fp_sha=$(git rev-parse -q --verify "origin/$2" 2>/dev/null || git rev-parse -q --verify "$2" 2>/dev/null || echo "sha$1")
+  _fp_sha=$(git -C "${WORK:-.}" rev-parse -q --verify "origin/$2" 2>/dev/null || git -C "${WORK:-.}" rev-parse -q --verify "$2" 2>/dev/null || echo "sha$1")
   _fjq -n --argjson iid "$1" --arg src "$2" --arg autor "$3" \
     --argjson draft "$_fp_draft" --arg sha "$_fp_sha" \
     '{iid:$iid, source_branch:$src, target_branch:"main", draft:$draft, sha:$sha,
