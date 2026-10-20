@@ -135,8 +135,20 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
 }
 
 @test "nada da empresa nos arquivos do kit" {
-  run grep -rli 'dimep' "$KIT_DIR/.github" "$KIT_DIR/ci"
-  [ "$status" -ne 0 ]
+  # termos vem do ambiente (virgula ou espaco), nunca literais no repo
+  if [ -z "${GITFLOW_TERMOS_PROIBIDOS:-}" ]; then
+    skip "GITFLOW_TERMOS_PROIBIDOS não definido"
+  fi
+  dirs=()
+  for d in .github ci core adapters setup modelos docs; do
+    [ -d "$KIT_DIR/$d" ] && dirs+=("$KIT_DIR/$d")
+  done
+  [ "${#dirs[@]}" -gt 0 ]
+  termos=$(printf '%s' "$GITFLOW_TERMOS_PROIBIDOS" | tr ',' ' ')
+  for t in $termos; do
+    run grep -rliF -- "$t" "${dirs[@]}"
+    [ "$status" -ne 0 ] || { echo "termo proibido encontrado: $t"; echo "$output"; false; }
+  done
 }
 
 @test "token do App restrito ao repositorio e sem credencial persistida" {
