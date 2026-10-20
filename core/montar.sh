@@ -143,7 +143,7 @@ if [ -n "$DEC" ]; then
     [ -n "$RC" ] || continue
     contem "$TMP/manifesto" "$RC" || echo "$RC"
   done > "$TMP/sumiu"
-  [ ! -s "$TMP/sumiu" ] || para "entregas aprovadas fora da build sem motivo: $(tr '\n' ' ' < "$TMP/sumiu"). Reabra o MR ou use /retirar."
+  [ ! -s "$TMP/sumiu" ] || para "entregas aprovadas fora da build sem motivo: $(tr '\n' ' ' < "$TMP/sumiu"). Reabra o $TERMO_PR ou use /retirar."
 fi
 
 # manifesto: o que saiu em relação à build publicada (informativo)

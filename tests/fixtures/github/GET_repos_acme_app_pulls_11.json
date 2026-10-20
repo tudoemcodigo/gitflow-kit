@@ -1,0 +1,3 @@
+{"number":11,"state":"open","draft":false,"merged":false,"merged_at":null,"body":"## Criterio de aceite\nfeito\n","user":{"login":"dev1"},
+ "head":{"ref":"feature/PROJ-101-x","sha":"sha11"},"base":{"ref":"main"},
+ "labels":[{"name":"Ambiente::QA"},{"name":"Reteste expresso"}]}

@@ -1,0 +1,4 @@
+[{"state":"APPROVED","commit_id":"sha13","user":{"login":"rev1"}},
+ {"state":"CHANGES_REQUESTED","commit_id":"sha13","user":{"login":"rev1"}},
+ {"state":"APPROVED","commit_id":"sha13","user":{"login":"rev2"}},
+ {"state":"DISMISSED","commit_id":"sha13","user":{"login":"rev2"}}]

@@ -26,11 +26,11 @@ ID=$(id_da_branch "$SRC")
 [ -n "$ID" ] || recusa "nome de branch fora do padrão (feature/ABC-123-descricao)"
 
 [ "$(printf '%s' "$MR" | jqb -r .target_branch)" = main ] \
-  || recusa "o MR precisa apontar para a main (sub-branch de épico entrega pelo MR do épico)"
-[ "$(printf '%s' "$MR" | jqb -r .draft)" = false ] || recusa "o MR está em rascunho (draft)"
+  || recusa "o $TERMO_PR precisa apontar para a main (sub-branch de épico entrega pelo $TERMO_PR do épico)"
+[ "$(printf '%s' "$MR" | jqb -r .draft)" = false ] || recusa "o $TERMO_PR está em rascunho (draft)"
 DONO=$(printf '%s' "$MR" | jqb -r .author)
 if [ "$AUTOR" != "$DONO" ]; then
-  membro "$AUTOR" "${GRUPO_TL:-tech-leads}" || recusa "só o autor do MR ou um Tech Lead pode entregar"
+  membro "$AUTOR" "${GRUPO_TL:-tech-leads}" || recusa "só o autor do $TERMO_PR ou um Tech Lead pode entregar"
 fi
 git fetch --quiet --force --tags origin main "$SRC"
 
@@ -56,7 +56,7 @@ git merge-base --is-ancestor origin/main "$SHA" || recusa "a branch não contém
 for T in $(git tag -l 'rc/*' --no-merged origin/main --merged "$SHA"); do
   case "$T" in
     rc/"$ID".*) ;;
-    *) recusa "a branch contém a entrega $T, de outro MR, que ainda não está em PRD. Use entrega única (épico) ou espere ela ir para PRD" ;;
+    *) recusa "a branch contém a entrega $T, de outro $TERMO_PR, que ainda não está em PRD. Use entrega única (épico) ou espere ela ir para PRD" ;;
   esac
 done
 
@@ -79,7 +79,7 @@ fi
 DESC=$(printf '%s' "$MR" | jqb -r '.description // ""' | tr -d '\015')
 for S in "Critério de aceite" "Como testar"; do
   printf '%s\n' "$DESC" | awk -v s="## $S" '$0==s {f=1; next} /^## / {f=0} f && NF && !/^\(/' | grep -q . \
-    || recusa "a seção \"$S\" do MR está vazia"
+    || recusa "a seção \"$S\" do $TERMO_PR está vazia"
 done
 if printf '%s\n' "$DESC" | grep -q -- '- \[ \]'; then recusa "há itens do autoteste sem marcar"; fi
 
@@ -98,7 +98,7 @@ fi
 N=${ANT##*.}
 TAG="rc/$ID.$(( ${N:-0} + 1 ))"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
-git $BOT tag -a --cleanup=verbatim "$TAG" "$SHA" -m "Entrega de $ID (MR !$MR_IID) por @$AUTOR"
+git $BOT tag -a --cleanup=verbatim "$TAG" "$SHA" -m "Entrega de $ID ($TERMO_PR !$MR_IID) por @$AUTOR"
 git push -q origin "refs/tags/$TAG"
 if [ "$DEMO_SEM_REVIEW" = sim ]; then
   pr_comentar "$MR_IID" "⚠️ MODO_DEMO: code review de outra pessoa dispensado nesta entrega (só na demonstração)." || true

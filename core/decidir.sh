@@ -45,7 +45,7 @@ git fetch --quiet --force --tags origin '+refs/heads/*:refs/remotes/origin/*'
 MR=$(pr_get "$MR_IID")
 SRC=$(printf '%s' "$MR" | jqb -r .source_branch)
 RC=$(ultima_rc "$(id_da_branch "$SRC")")
-[ -n "$RC" ] || recusa "o MR não tem entrega"
+[ -n "$RC" ] || recusa "o $TERMO_PR não tem entrega"
 E=$(estado "$RC")
 BUILD="-"
 

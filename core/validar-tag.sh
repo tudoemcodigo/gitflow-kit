@@ -54,7 +54,7 @@ MANIF=$(manifesto_de "$HOM") || recusa "não foi possível ler o manifesto de $H
 # manifesto sem entregas é uma release vazia legítima
 printf '%s\n' "$MANIF" | awk '$1 ~ /^rc\// {print $1}' | while read -r RC; do
   ID=${RC#rc/}; ID=${ID%.*}
-  [ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do MR (existe $(ultima_rc "$ID"))."
+  [ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do $TERMO_PR (existe $(ultima_rc "$ID"))."
   [ "$(estado "$RC")" = hom-ok ] || recusa "$RC não está homologada (estado: $(estado "$RC"))."
 done
 echo "✅ $TAG válida para prd (hom $HOM)."

@@ -1,0 +1,3 @@
+[{"state":"APPROVED","commit_id":"old","user":{"login":"rev1"}},
+ {"state":"APPROVED","commit_id":"sha11","user":{"login":"dev1"}},
+ {"state":"COMMENTED","commit_id":"sha11","user":{"login":"rev2"}}]

@@ -40,7 +40,7 @@ else
 fi
 
 # ---------- MRs ----------
-LISTA=$(pr_listar_abertos) || para "publicar: não foi possível listar os MRs abertos."
+LISTA=$(pr_listar_abertos) || para "publicar: não foi possível listar os ${TERMO_PR}s abertos."
 printf '%s\n' "$LISTA" > "$TMP/abertos"
 while read -r IID SRC _; do
   [ -n "$IID" ] || continue
@@ -51,10 +51,10 @@ while read -r IID SRC _; do
   if git merge-base --is-ancestor "$RC^{commit}" "$SHA"; then
     # o MR só fecha se os passos anteriores deram certo (senão a próxima rodada ainda o encontra aberto)
     OK=sim
-    pr_rotular "$IID" "Ambiente::PRD" "$LABELS_AMBIENTE" || { falha "rótulo do MR !$IID"; OK=nao; }
-    pr_comentar "$IID" "🚀 **$RC** foi publicada em PRD na versão **$TAG**. MR encerrado." || { falha "comentário do MR !$IID"; OK=nao; }
+    pr_rotular "$IID" "Ambiente::PRD" "$LABELS_AMBIENTE" || { falha "rótulo do $TERMO_PR !$IID"; OK=nao; }
+    pr_comentar "$IID" "🚀 **$RC** foi publicada em PRD na versão **$TAG**. $TERMO_PR encerrado." || { falha "comentário do $TERMO_PR !$IID"; OK=nao; }
     branch_apagar "$SRC" || { falha "apagar a branch $SRC"; OK=nao; }
-    if [ "$OK" = sim ]; then pr_fechar "$IID" || falha "fechar o MR !$IID"; fi
+    if [ "$OK" = sim ]; then pr_fechar "$IID" || falha "fechar o $TERMO_PR !$IID"; fi
     continue
   fi
   # entrega mais nova que a publicada: o MR segue aberto, com aviso (uma vez só), se uma anterior foi publicada
@@ -64,10 +64,10 @@ while read -r IID SRC _; do
   done
   if [ -n "$PUBLICADA" ]; then
     MARCA="<!-- gitflow:aviso:$TAG:$RC -->"
-    COMENTS=$(pr_comentarios "$IID") || { falha "ler os comentários do MR !$IID"; continue; }
+    COMENTS=$(pr_comentarios "$IID") || { falha "ler os comentários do $TERMO_PR !$IID"; continue; }
     if ! printf '%s
 ' "$COMENTS" | grep -qF "$MARCA"; then
-      pr_comentar "$IID" "⚠️ **$PUBLICADA** foi publicada em PRD na versão **$TAG**, mas existe uma entrega mais nova (**$RC**) que não entrou. O MR continua aberto. $MARCA" || falha "aviso do MR !$IID"
+      pr_comentar "$IID" "⚠️ **$PUBLICADA** foi publicada em PRD na versão **$TAG**, mas existe uma entrega mais nova (**$RC**) que não entrou. O $TERMO_PR continua aberto. $MARCA" || falha "aviso do $TERMO_PR !$IID"
     fi
   fi
 done < "$TMP/abertos"

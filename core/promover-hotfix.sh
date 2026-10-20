@@ -54,7 +54,7 @@ done
 MANIF=$(manifesto_de "$QA_TAG")
 RC=$(printf '%s\n' "$MANIF" | awk -v p="rc/$ID." 'index($1, p) == 1 {print $1; exit}')
 [ -n "$RC" ] || recusa "o manifesto de $QA_TAG não tem a entrega rc/$ID.N."
-[ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do MR (existe $(ultima_rc "$ID"))."
+[ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do $TERMO_PR (existe $(ultima_rc "$ID"))."
 [ "$(estado "$RC")" = qa-ok ] || recusa "$RC não tem qa-ok (estado: $(estado "$RC")); use /aprovar antes."
 
 DATA=$(date +%F)

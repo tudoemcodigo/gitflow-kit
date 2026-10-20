@@ -37,6 +37,7 @@ carregar_config() {
   _kd=$(kit_dir)
   # shellcheck source=/dev/null
   . "$_kd/adapters/provider/$GITFLOW_PROVIDER.sh"
+  : "${TERMO_PR:=MR}"   # o provider pode definir PR (GitHub); padrão MR
   if [ -f "$_kd/adapters/notificar/$NOTIFICAR.sh" ]; then
     # shellcheck source=/dev/null
     . "$_kd/adapters/notificar/$NOTIFICAR.sh"

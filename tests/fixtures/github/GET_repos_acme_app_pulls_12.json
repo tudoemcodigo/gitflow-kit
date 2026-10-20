@@ -1,0 +1,2 @@
+{"number":12,"state":"closed","draft":true,"merged":true,"merged_at":"2026-10-01T10:00:00Z","body":null,"user":{"login":"dev2"},
+ "head":{"ref":"feature/PROJ-102-y","sha":"sha12"},"base":{"ref":"main"},"labels":[]}

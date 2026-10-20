@@ -1,0 +1,2 @@
+{"number":13,"state":"closed","draft":false,"merged":false,"merged_at":null,"body":"x","user":{"login":"dev1"},
+ "head":{"ref":"feature/PROJ-103-z","sha":"sha13"},"base":{"ref":"main"},"labels":[]}

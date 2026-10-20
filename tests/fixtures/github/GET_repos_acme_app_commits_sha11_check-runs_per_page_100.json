@@ -1,0 +1,5 @@
+{"total_count":4,"check_runs":[
+ {"name":"build","status":"completed","conclusion":"success"},
+ {"name":"lint","status":"completed","conclusion":"skipped"},
+ {"name":"docs","status":"completed","conclusion":"neutral"},
+ {"name":"gitflow-esteira","status":"completed","conclusion":"failure"}]}
