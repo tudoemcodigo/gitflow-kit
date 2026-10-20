@@ -42,6 +42,16 @@ exige_sha() { [ -n "$SHA" ] || para "esteira.env sem SHA: rode a etapa preparar 
 MONT=${GITFLOW_LOCK_MONTAGEM:-}
 if [ -z "$MONT" ] && [ -s "$SAIDA/lock-montagem" ]; then MONT=$(tr -d '\015\n' < "$SAIDA/lock-montagem"); fi
 
+# main + tags sempre (falha aborta); qa/hom só se existem no remoto
+buscar() {
+  git fetch --quiet --force --tags origin main || para "não foi possível buscar main e tags de origin."
+  for _b in qa hom; do
+    if git ls-remote --exit-code --heads origin "$_b" > /dev/null 2>&1; then
+      git fetch --quiet --force origin "+refs/heads/$_b:refs/remotes/origin/$_b" || para "não foi possível buscar $_b de origin."
+    fi
+  done
+}
+
 soltar_locks() {
   _rc=0
   lock soltar "ambiente-$AMB" || _rc=1
@@ -51,8 +61,7 @@ soltar_locks() {
 
 case "$ETAPA" in
   preparar)
-    git fetch --quiet --force --tags origin main > /dev/null 2>&1 || true
-    for _b in qa hom; do git fetch --quiet --force origin "$_b" > /dev/null 2>&1 || true; done
+    buscar
     sh "$KIT_DIR/core/validar-tag.sh" "$TAG" "$AMB"
     # R7: PULAR_CHECAGEM só vale para a build que JÁ está publicada no ambiente
     if [ "${PULAR_CHECAGEM:-false}" = true ] && [ "$(publicada "$AMB")" != "$TAG" ]; then
@@ -99,6 +108,8 @@ case "$ETAPA" in
     exige_sha
     command -v deploy_iniciar > /dev/null 2>&1 || para "provider sem deploy_iniciar."
     lock pegar "ambiente-$AMB" 1800
+    buscar   # depois da espera: origin/main e as tags podem ter mudado (P9)
+    [ "$SHA" = "$(git rev-parse "$TAG^{commit}")" ] || para "o SHA do esteira.env não é o de $TAG."
     sh "$KIT_DIR/core/validar-tag.sh" "$TAG" "$AMB"   # P9: revalida dentro do travamento
     ID=$(deploy_iniciar "$AMB" "$TAG" "$SHA")
     salvar DEPLOY_ID "$ID"
@@ -151,7 +162,10 @@ case "$ETAPA" in
     DONO=$(lock dono "ambiente-$AMB") || DONO=""
     case "$DONO" in
       "run=${GITFLOW_RUN_ID:-}"\ *) ;;
-      *) echo "o lock ambiente-$AMB não é desta execução: nada a desfazer."; exit 1 ;;
+      *)
+        echo "o lock ambiente-$AMB não é desta execução: nada a desfazer."
+        if [ -n "$MONT" ]; then lock soltar "$MONT" || echo "aviso: $MONT não é desta execução; mantido." >&2; fi
+        exit 1 ;;
     esac
     if [ -z "$DEPLOY_ID" ]; then
       echo "nada foi implantado: só soltando o travamento."

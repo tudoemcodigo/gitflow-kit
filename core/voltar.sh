@@ -16,9 +16,12 @@ command -v artefatos_baixar > /dev/null 2>&1 || { echo "ARTEFATOS não configura
 command -v deploy_instalar > /dev/null 2>&1 || { echo "DEPLOY não configurado." >&2; exit 1; }
 falha() { echo "voltar $AMB: $*" >&2; exit 1; }
 
-ATUAL=$(deploy_ultimo "$AMB" | awk '{print $1}') || falha "não foi possível consultar o deployment atual."
+ULT=$(deploy_ultimo "$AMB") || falha "não foi possível consultar o deployment atual."
+ATUAL=$(printf '%s
+' "$ULT" | awk '{print $1}')
 [ -n "$ATUAL" ] || falha "não há deployment em $AMB."
 
+# (o alvo nunca é a própria build que falhou: pula para um sucesso anterior)
 # hom.* "Release|Hotfix X" é preview: só vale como destino se chegou a PRD (v* no mesmo commit, já em PRD)
 preview_nao_publicada() {
   [ "$AMB" = hom ] || return 1
@@ -36,7 +39,7 @@ preview_nao_publicada() {
 
 ALVO=$(deploy_ok_anterior "$AMB" "$ATUAL") || falha "não foi possível consultar o deployment anterior."
 N=0
-while [ -n "$ALVO" ] && preview_nao_publicada "$ALVO"; do
+while [ -n "$ALVO" ] && { [ "$ALVO" = "$ATUAL" ] || preview_nao_publicada "$ALVO"; }; do
   N=$((N + 1))
   [ "$N" -lt 50 ] || { ALVO=""; break; }
   ALVO=$(deploy_ok_anterior "$AMB" "$ALVO") || falha "não foi possível consultar o deployment anterior."

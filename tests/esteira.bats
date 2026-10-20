@@ -120,13 +120,17 @@ branch_em() { git -C "$ORIGIN" rev-parse "refs/heads/$1"; }
   git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m ok
   git -C "$WORK" tag -a v1.1.0 -m v1.1.0
   git -C "$WORK" push -q origin main v1.1.0 hom.2026-01-01.1
-  # hotfix chega a PRD depois da preview: main avanca e PRD passa a ter v1.0.1
-  echo hf > "$WORK/hf.txt"
-  git -C "$WORK" add hf.txt
-  git -C "$WORK" commit -q -m "fix: hf"
-  git -C "$WORK" tag -a v1.0.1 -m v1.0.1
-  git -C "$WORK" push -q origin main v1.0.1
-  id=$(deploy_iniciar prd v1.0.1 "$(git -C "$WORK" rev-parse HEAD)")
+  # hotfix chega a PRD depois da preview, so no origin (outro clone): o WORK nao sabe
+  git clone -q "$ORIGIN" "$BATS_TEST_TMPDIR/outro" 2> /dev/null
+  git -C "$BATS_TEST_TMPDIR/outro" config user.name T
+  git -C "$BATS_TEST_TMPDIR/outro" config user.email t@example.com
+  git -C "$BATS_TEST_TMPDIR/outro" checkout -q main
+  echo hf > "$BATS_TEST_TMPDIR/outro/hf.txt"
+  git -C "$BATS_TEST_TMPDIR/outro" add hf.txt
+  git -C "$BATS_TEST_TMPDIR/outro" commit -q -m "fix: hf"
+  git -C "$BATS_TEST_TMPDIR/outro" tag -a v1.0.1 -m v1.0.1
+  git -C "$BATS_TEST_TMPDIR/outro" push -q origin main v1.0.1
+  id=$(deploy_iniciar prd v1.0.1 "$(git -C "$BATS_TEST_TMPDIR/outro" rev-parse HEAD)")
   deploy_concluir "$id" success
   TAG=v1.1.0
   SHA=$(git -C "$WORK" rev-parse "v1.1.0^{commit}")
@@ -137,7 +141,7 @@ branch_em() { git -C "$ORIGIN" rev-parse "refs/heads/$1"; }
   printf 'SHA=%s\nCONSTRUIR=nao\n' "$SHA" > "$GITFLOW_SAIDA/esteira.env"
   est implantar
   assert_failure
-  assert_output --partial "P9"
+  assert_output --partial "P9: o commit de v1.1.0 não contém a main atual"
   [ ! -e "$DEPLOY_DIR/prd" ]
 }
 
@@ -210,4 +214,44 @@ hom_build() {
   # a anterior (hom.2) e preview de release nao publicada: volta para hom.1
   [ "$(branch_em hom)" = "$SHA1" ]
   [ "$(deploy_ultimo hom)" = "hom.2026-01-01.1 success" ]
+}
+
+@test "falhou com a esteira abortada antes de implantar solta a montagem" {
+  build_qa 1
+  TAG=qa.2026-01-01.1
+  (cd "$WORK" && sh "$KIT_DIR/core/lock.sh" pegar montagem-qa 0 > /dev/null)
+  echo montagem-qa > "$GITFLOW_SAIDA/lock-montagem"
+  printf '%s
+' '#!/bin/sh' 'exit 1' > "$WORK/scripts/test.sh"
+  passos preparar construir
+  est testar
+  assert_failure
+  est falhou
+  lock_livre montagem-qa
+}
+
+@test "falhou sem DEPLOY_ID (lock nosso): so solta os locks, sem voltar" {
+  build_qa 1
+  TAG=qa.2026-01-01.1
+  passos preparar
+  (cd "$WORK" && sh "$KIT_DIR/core/lock.sh" pegar ambiente-qa 0 > /dev/null)
+  est falhou
+  assert_success
+  lock_livre ambiente-qa
+  [ "$(deploy_ultimo qa)" = "" ]
+}
+
+@test "verificar-auto prd sem smoke.sh usa deploy_saude" {
+  AMB=prd
+  TAG=v1.0.0
+  printf 'SHA=x
+CONSTRUIR=nao
+' > "$GITFLOW_SAIDA/esteira.env"
+  est verificar-auto
+  assert_failure
+  mkdir -p "$DEPLOY_DIR/prd"
+  echo '{}' > "$DEPLOY_DIR/prd/version.json"
+  est verificar-auto
+  assert_success
+  grep -q '^VERIFICAR=OK$' "$GITFLOW_SAIDA/esteira.env"
 }
