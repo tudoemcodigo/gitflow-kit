@@ -1,0 +1,83 @@
+name: gitflow-comandos
+# Comandos em comentarios de PR (/entregar, /aprovar, ...). Sem trava do Actions: a serializacao e o lock "comandos" (ref no git).
+on:
+  workflow_call:
+    inputs:
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  comandos:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NOTA: ${{ github.event.comment.body }}
+      MR_IID: ${{ github.event.issue.number }}
+      AUTOR: ${{ github.event.comment.user.login }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - id: filtro
+        name: Comando conhecido?
+        run: |
+          cmd=$(printf '%s\n' "$NOTA" | awk 'NR==1 {print $1; exit}' | tr -d '\r')
+          case "$cmd" in
+            /entregar | /aprovar | /reprovar | /homologar | /alteracao | /ajuste | /reprovar-hom | /retirar) echo "valido=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "valido=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - uses: ./.gitflow/.github/actions/preparar
+        if: steps.filtro.outputs.valido == 'true'
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Reagir (olhos)
+        if: steps.filtro.outputs.valido == 'true'
+        run: sh "$KIT_DIR/ci/github-actions/reagir.sh" "$COMMENT_ID" eyes
+      - id: trava
+        name: Pegar o lock de comandos
+        if: steps.filtro.outputs.valido == 'true'
+        working-directory: app
+        run: sh "$KIT_DIR/core/lock.sh" pegar comandos 900
+      - name: Executar o comando
+        if: steps.filtro.outputs.valido == 'true'
+        working-directory: app
+        run: |
+          cmd=$(printf '%s\n' "$NOTA" | awk 'NR==1 {print $1; exit}' | tr -d '\r')
+          case "$cmd" in
+            /entregar) sh "$KIT_DIR/core/criar-rc.sh" ;;
+            *) sh "$KIT_DIR/core/decidir.sh" ;;
+          esac
+      - name: Soltar o lock de comandos
+        if: always() && steps.trava.outcome == 'success'
+        working-directory: app
+        run: sh "$KIT_DIR/core/lock.sh" soltar comandos
+      - name: Reagir (resultado)
+        if: always() && steps.filtro.outputs.valido == 'true'
+        env:
+          STATUS: ${{ job.status }}
+        run: |
+          if [ "$STATUS" = success ]; then r='+1'; else r='-1'; fi
+          sh "$KIT_DIR/ci/github-actions/reagir.sh" "$COMMENT_ID" "$r"

@@ -1,0 +1,302 @@
+name: gitflow-esteira
+# Esteira de publicacao (spec 4.1): um job por etapa; o estado passa por artefatos ($GITFLOW_SAIDA).
+on:
+  workflow_call:
+    inputs:
+      TAG:
+        type: string
+        required: true
+      AMBIENTE:
+        type: string
+        required: true
+      PULAR_CHECAGEM:
+        type: boolean
+        default: false
+      GITFLOW_LOCK_MONTAGEM:
+        description: Nome do lock montagem-<amb> a soltar no fim (vem da montagem)
+        type: string
+        default: ''
+      montar-workflow:
+        description: Arquivo do workflow da aplicacao que chama gitflow-montar (remontagem depois do PRD)
+        type: string
+        default: gitflow.yml
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.TAG }}
+  AMBIENTE: ${{ inputs.AMBIENTE }}
+  PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+  GITFLOW_LOCK_MONTAGEM: ${{ inputs.GITFLOW_LOCK_MONTAGEM }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Preparar
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" preparar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitflow-estado-1
+          path: ${{ runner.temp }}/gitflow/esteira.env
+          overwrite: true
+
+  construir:
+    needs: preparar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-1
+          path: ${{ runner.temp }}/gitflow
+      - name: Construir
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" construir
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitflow-pacote
+          path: ${{ runner.temp }}/gitflow/app-*
+          if-no-files-found: ignore
+          overwrite: true
+
+  testar:
+    needs: construir
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-1
+          path: ${{ runner.temp }}/gitflow
+      - name: Testar
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" testar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitflow-estado-2
+          path: ${{ runner.temp }}/gitflow/esteira.env
+          overwrite: true
+
+  publicar-pacote:
+    needs: testar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-2
+          path: ${{ runner.temp }}/gitflow
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # sem pacote novo quando o commit ja tinha build
+        with:
+          name: gitflow-pacote
+          path: ${{ runner.temp }}/gitflow
+      - name: Publicar pacote
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" publicar-pacote
+
+  gates:
+    needs: publicar-pacote
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-2
+          path: ${{ runner.temp }}/gitflow
+      - name: Gates
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" gates
+
+  aprovacao:
+    needs: gates
+    if: inputs.AMBIENTE == 'prd'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: {}
+    steps:
+      - name: Aprovado pelo Environment production
+        run: echo "Aprovacao de $TAG para PRD registrada pelo Environment production."
+
+  implantar:
+    needs: [gates, aprovacao]
+    if: ${{ !cancelled() && needs.gates.result == 'success' && (needs.aprovacao.result == 'success' || needs.aprovacao.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      verificar: ${{ steps.saida.outputs.verificar }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-2
+          path: ${{ runner.temp }}/gitflow
+      - name: Implantar
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" implantar
+      - name: Verificar (automatica)
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" verificar-auto
+      - name: Saida
+        id: saida
+        if: always()
+        run: |
+          v=$(sed -n 's/^VERIFICAR=//p' "$GITFLOW_SAIDA/esteira.env" 2> /dev/null | tail -n 1 | tr -d '\r' || true)
+          echo "verificar=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitflow-estado-3
+          path: ${{ runner.temp }}/gitflow/esteira.env
+          overwrite: true
+
+  checagem:
+    needs: implantar
+    if: needs.implantar.result == 'success' && needs.implantar.outputs.verificar == 'MANUAL' && !inputs.PULAR_CHECAGEM
+    runs-on: ubuntu-latest
+    environment: checagem-${{ inputs.AMBIENTE }}
+    permissions: {}
+    steps:
+      - name: Checagem manual aprovada pelo Environment
+        run: echo "Checagem de $TAG em $AMBIENTE aprovada."
+
+  registrar:
+    needs: [implantar, checagem]
+    if: ${{ !cancelled() && needs.implantar.result == 'success' && (needs.checagem.result == 'success' || needs.checagem.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-3
+          path: ${{ runner.temp }}/gitflow
+      - name: Registrar
+        working-directory: app
+        run: sh "$KIT_DIR/core/esteira.sh" registrar
+      - name: Remontar QA e HOM (depois do PRD)
+        if: inputs.AMBIENTE == 'prd'
+        working-directory: app
+        env:
+          MONTAR_WORKFLOW: ${{ inputs.montar-workflow }}
+        run: sh "$KIT_DIR/ci/github-actions/disparar-montar.sh"
+
+  falhou:
+    needs: [preparar, construir, testar, publicar-pacote, gates, aprovacao, implantar, checagem, registrar]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # so existe se o implantar chegou a rodar
+        with:
+          name: gitflow-estado-3
+          path: ${{ runner.temp }}/gitflow
+      - name: Desfazer (ou alertar)
+        working-directory: app
+        env:
+          R_CHEC: ${{ needs.checagem.result }}
+          R_REG: ${{ needs.registrar.result }}
+        run: sh "$KIT_DIR/ci/github-actions/falhou.sh"

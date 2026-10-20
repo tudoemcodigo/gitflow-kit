@@ -1,0 +1,57 @@
+name: gitflow-regressao
+# O QA registra o resultado da regressao da preview publicada na HOM (core/regressao.sh confere o Team).
+on:
+  workflow_call:
+    inputs:
+      HOM_TAG:
+        type: string
+        required: true
+      RESULTADO:
+        description: ok ou falhou
+        type: string
+        required: true
+      ISSUE:
+        type: string
+        required: true
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  regressao:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HOM_TAG: ${{ inputs.HOM_TAG }}
+      RESULTADO: ${{ inputs.RESULTADO }}
+      ISSUE: ${{ inputs.ISSUE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Registrar a regressao
+        working-directory: app
+        run: sh "$KIT_DIR/core/regressao.sh" "$HOM_TAG" "$RESULTADO" "$ISSUE"

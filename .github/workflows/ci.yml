@@ -18,10 +18,15 @@ jobs:
           submodules: true
       - name: shellcheck
         run: |
-          files=$(find core adapters -name '*.sh' 2>/dev/null || true)
+          files=$(find core adapters ci -name '*.sh' 2>/dev/null || true)
           if [ -n "$files" ]; then
             # shellcheck disable=SC2086
             shellcheck $files
           fi
+      - name: actionlint
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint .github/workflows/*.yml ci/github-actions/chamadores/*.yml
       - name: bats
         run: tests/bats/bats-core/bin/bats tests/

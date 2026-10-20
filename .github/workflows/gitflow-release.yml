@@ -1,0 +1,81 @@
+name: gitflow-release
+# O Release Manager cria vVERSAO no commit da preview com regressao-ok (core/criar-release.sh) e a esteira leva a PRD.
+on:
+  workflow_call:
+    inputs:
+      VERSAO:
+        type: string
+        required: true
+      HOM_TAG:
+        type: string
+        required: true
+      ISSUE:
+        type: string
+        required: true
+      PULAR_CHECAGEM:
+        type: boolean
+        default: false
+      montar-workflow:
+        type: string
+        default: gitflow.yml
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSAO: ${{ inputs.VERSAO }}
+      HOM_TAG: ${{ inputs.HOM_TAG }}
+      ISSUE: ${{ inputs.ISSUE }}
+    outputs:
+      tag: ${{ steps.saida.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Criar a release
+        working-directory: app
+        run: sh "$KIT_DIR/core/criar-release.sh" "$VERSAO" "$HOM_TAG" "$ISSUE"
+      - name: Saida
+        id: saida
+        run: echo "tag=v$VERSAO" >> "$GITHUB_OUTPUT"
+
+  esteira:
+    needs: release
+    uses: ./.github/workflows/gitflow-esteira.yml
+    with:
+      TAG: ${{ needs.release.outputs.tag }}
+      AMBIENTE: prd
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+      montar-workflow: ${{ inputs.montar-workflow }}
+      kit-repo: ${{ inputs.kit-repo }}
+      kit-ref: ${{ inputs.kit-ref }}
+    secrets:
+      GITFLOW_APP_ID: ${{ secrets.GITFLOW_APP_ID }}
+      GITFLOW_APP_KEY: ${{ secrets.GITFLOW_APP_KEY }}

@@ -1,0 +1,67 @@
+name: gitflow-preparar
+description: Prepara o job do GitFlow Kit (token do App opcional, checkout da aplicacao e variaveis do kit). O kit ja deve estar em .gitflow.
+inputs:
+  token:
+    description: "'true' gera o token do GitHub App (so para jobs que escrevem no repositorio)"
+    default: 'false'
+  app-id:
+    description: ID do GitHub App (so com token true)
+    default: ''
+  app-key:
+    description: Chave privada do GitHub App (so com token true)
+    default: ''
+  ref:
+    description: Ref da aplicacao a baixar (vazio = branch padrao)
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: app
+      if: inputs.token == 'true'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-key }}
+        owner: ${{ github.repository_owner }}
+    - uses: actions/checkout@v4
+      with:
+        path: app
+        ref: ${{ inputs.ref }}
+        fetch-depth: 0
+        fetch-tags: true
+        token: ${{ steps.app.outputs.token || github.token }}
+    - name: Variaveis do kit
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app.outputs.token }}
+        APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        EVENTO: ${{ github.event_name }}
+        ATOR: ${{ github.triggering_actor }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        AREA: ${{ github.workspace }}
+        TEMP_DIR: ${{ runner.temp }}
+      run: |
+        set -eu
+        mkdir -p "$TEMP_DIR/gitflow"
+        QUEM=$ATOR
+        if [ "$EVENTO" = schedule ]; then QUEM=timer; fi
+        EMAIL=
+        if [ -n "$APP_TOKEN" ]; then
+          echo "::add-mask::$APP_TOKEN"
+          # identidade dos commits/tags = o bot do App (<slug>[bot])
+          BID=$(curl -fsS -H "Authorization: Bearer $APP_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "${GITHUB_API_URL:-https://api.github.com}/users/${APP_SLUG}%5Bbot%5D" | jq -r '.id // empty') || BID=
+          if [ -n "$BID" ]; then EMAIL="${BID}+${APP_SLUG}[bot]@users.noreply.github.com"; else EMAIL="${APP_SLUG}[bot]@users.noreply.github.com"; fi
+        fi
+        {
+          echo "GITFLOW_RUN_ID=${RUN_ID}-${RUN_ATTEMPT}"
+          echo "GITFLOW_RUN_URL=$RUN_URL"
+          echo "GITFLOW_SAIDA=$TEMP_DIR/gitflow"
+          echo "GITFLOW_PROVIDER=github"
+          echo "BUILD_USER_ID=$QUEM"
+          echo "KIT_DIR=$AREA/.gitflow"
+          if [ -n "$APP_TOKEN" ]; then echo "GITHUB_TOKEN=$APP_TOKEN"; fi
+          if [ -n "$EMAIL" ]; then echo "BOT_EMAIL=$EMAIL"; fi
+        } >> "$GITHUB_ENV"

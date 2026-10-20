@@ -1,0 +1,145 @@
+# Modelo de chamador do GitFlow Kit: copie para .github/workflows/gitflow.yml da aplicacao.
+# Pre-requisitos: secrets GITFLOW_APP_ID e GITFLOW_APP_KEY (org), Environments production e checagem-<amb>, Teams (docs do kit).
+# O nome deste arquivo e o valor de `montar-workflow` (a esteira o dispara depois do PRD); se o renomear, passe
+# `with: montar-workflow: <arquivo>` nos jobs montar/release/promover-hotfix/esteira.
+name: gitflow
+
+on:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '0 13,18 * * 1-5'   # QA (UTC)
+    - cron: '0 20 * * 1-5'      # HOM (UTC)
+  workflow_dispatch:
+    inputs:
+      job:
+        description: O que executar
+        type: choice
+        default: montar
+        options: [montar, esteira, regressao, release, promover-hotfix, voltar, destravar]
+      ALVO:
+        description: montar - qa, hom, release ou hotfix
+        type: choice
+        default: qa
+        options: [qa, hom, release, hotfix]
+      VERSAO:
+        description: montar release / release - X.Y.Z
+        type: string
+        default: ''
+      HOTFIX:
+        description: montar hotfix - X.Y.Z
+        type: string
+        default: ''
+      EXPRESSO:
+        description: montar - so entregas de peso 1
+        type: boolean
+        default: false
+      FORCAR:
+        description: montar - ignora a trava de nada-novo
+        type: boolean
+        default: false
+      TAG:
+        description: esteira - tag a implantar
+        type: string
+        default: ''
+      AMBIENTE:
+        description: esteira / voltar - ambiente
+        type: choice
+        default: qa
+        options: [qa, hom, prd]
+      PULAR_CHECAGEM:
+        description: esteira - pula a checagem da build ja publicada
+        type: boolean
+        default: false
+      HOM_TAG:
+        description: regressao / release - tag hom.*
+        type: string
+        default: ''
+      RESULTADO:
+        description: regressao - ok ou falhou
+        type: choice
+        default: ok
+        options: [ok, falhou]
+      ISSUE:
+        description: regressao / release - numero da issue
+        type: string
+        default: ''
+      QA_TAG:
+        description: promover-hotfix - tag qa.*
+        type: string
+        default: ''
+      NOME:
+        description: destravar - nome do lock
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  comandos:
+    if: github.event_name == 'issue_comment'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-comandos.yml@v1
+    secrets: inherit
+
+  montar:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.job == 'montar')
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-montar.yml@v1
+    with:
+      ALVO: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 20 * * 1-5' && 'hom' || 'qa') || inputs.ALVO }}
+      VERSAO: ${{ inputs.VERSAO || '' }}
+      HOTFIX: ${{ inputs.HOTFIX || '' }}
+      EXPRESSO: ${{ inputs.EXPRESSO || false }}
+      FORCAR: ${{ inputs.FORCAR || false }}
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM || false }}
+    secrets: inherit
+
+  esteira:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'esteira'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-esteira.yml@v1
+    with:
+      TAG: ${{ inputs.TAG }}
+      AMBIENTE: ${{ inputs.AMBIENTE }}
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+    secrets: inherit
+
+  regressao:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'regressao'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-regressao.yml@v1
+    with:
+      HOM_TAG: ${{ inputs.HOM_TAG }}
+      RESULTADO: ${{ inputs.RESULTADO }}
+      ISSUE: ${{ inputs.ISSUE }}
+    secrets: inherit
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'release'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-release.yml@v1
+    with:
+      VERSAO: ${{ inputs.VERSAO }}
+      HOM_TAG: ${{ inputs.HOM_TAG }}
+      ISSUE: ${{ inputs.ISSUE }}
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+    secrets: inherit
+
+  promover-hotfix:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'promover-hotfix'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-promover-hotfix.yml@v1
+    with:
+      QA_TAG: ${{ inputs.QA_TAG }}
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+    secrets: inherit
+
+  voltar:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'voltar'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-voltar.yml@v1
+    with:
+      AMBIENTE: ${{ inputs.AMBIENTE }}
+    secrets: inherit
+
+  destravar:
+    if: github.event_name == 'workflow_dispatch' && inputs.job == 'destravar'
+    uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-destravar.yml@v1
+    with:
+      NOME: ${{ inputs.NOME }}
+    secrets: inherit

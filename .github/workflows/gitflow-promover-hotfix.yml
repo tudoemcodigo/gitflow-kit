@@ -1,0 +1,73 @@
+name: gitflow-promover-hotfix
+# Leva a build do hotfix aprovada no QA para a HOM (core/promover-hotfix.sh cria hom.*) e a esteira a implanta.
+on:
+  workflow_call:
+    inputs:
+      QA_TAG:
+        type: string
+        required: true
+      PULAR_CHECAGEM:
+        type: boolean
+        default: false
+      montar-workflow:
+        type: string
+        default: gitflow.yml
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  promover:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      QA_TAG: ${{ inputs.QA_TAG }}
+    outputs:
+      tag: ${{ steps.promover.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Promover
+        id: promover
+        working-directory: app
+        run: |
+          hom=$(sh "$KIT_DIR/core/promover-hotfix.sh" "$QA_TAG" | tail -n 1 | tr -d '\r')
+          echo "tag=$hom" >> "$GITHUB_OUTPUT"
+
+  esteira:
+    needs: promover
+    uses: ./.github/workflows/gitflow-esteira.yml
+    with:
+      TAG: ${{ needs.promover.outputs.tag }}
+      AMBIENTE: hom
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+      montar-workflow: ${{ inputs.montar-workflow }}
+      kit-repo: ${{ inputs.kit-repo }}
+      kit-ref: ${{ inputs.kit-ref }}
+    secrets:
+      GITFLOW_APP_ID: ${{ secrets.GITFLOW_APP_ID }}
+      GITFLOW_APP_KEY: ${{ secrets.GITFLOW_APP_KEY }}

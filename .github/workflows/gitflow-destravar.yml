@@ -1,0 +1,57 @@
+name: gitflow-destravar
+# Solta a forca um lock do kit (so Tech Lead ou Release Manager).
+on:
+  workflow_call:
+    inputs:
+      NOME:
+        description: Nome do lock (ex.. montagem-qa, ambiente-hom, comandos)
+        type: string
+        required: true
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  destravar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NOME: ${{ inputs.NOME }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Conferir o Team
+        working-directory: app
+        run: sh "$KIT_DIR/ci/github-actions/exige-membro.sh" tech-leads release-managers
+      - name: Soltar o lock
+        working-directory: app
+        run: |
+          case "$NOME" in
+            comandos | montagem-qa | montagem-hom | ambiente-qa | ambiente-hom | ambiente-prd) ;;
+            *) echo "⛔ nome de lock invalido: $NOME" >&2; exit 1 ;;
+          esac
+          sh "$KIT_DIR/core/lock.sh" forcar-soltar "$NOME"

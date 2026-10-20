@@ -1,0 +1,103 @@
+name: gitflow-montar
+# Montagem de qa/hom/release/hotfix sob lock (core/fluxo-montar.sh); com tag criada, chama a esteira.
+on:
+  workflow_call:
+    inputs:
+      ALVO:
+        description: qa, hom, release ou hotfix
+        type: string
+        required: true
+      VERSAO:
+        type: string
+        default: ''
+      HOTFIX:
+        type: string
+        default: ''
+      EXPRESSO:
+        type: boolean
+        default: false
+      FORCAR:
+        type: boolean
+        default: false
+      PULAR_CHECAGEM:
+        type: boolean
+        default: false
+      montar-workflow:
+        type: string
+        default: gitflow.yml
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      ALVO: ${{ inputs.ALVO }}
+      VERSAO: ${{ inputs.VERSAO }}
+      HOTFIX: ${{ inputs.HOTFIX }}
+      EXPRESSO: ${{ inputs.EXPRESSO }}
+      FORCAR: ${{ inputs.FORCAR }}
+    outputs:
+      tag: ${{ steps.saida.outputs.tag }}
+      ambiente: ${{ steps.saida.outputs.ambiente }}
+      lock: ${{ steps.saida.outputs.lock }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Montar
+        working-directory: app
+        run: sh "$KIT_DIR/core/fluxo-montar.sh" "$ALVO"
+      - name: Saida
+        id: saida
+        if: always()
+        run: |
+          tag=$(tr -d '\r\n' < "$GITFLOW_SAIDA/montagem.tag" 2> /dev/null || true)
+          lock=$(tr -d '\r\n' < "$GITFLOW_SAIDA/lock-montagem" 2> /dev/null || true)
+          case "$ALVO" in qa | hotfix) amb=qa ;; *) amb=hom ;; esac
+          {
+            echo "tag=$tag"
+            echo "ambiente=$amb"
+            echo "lock=$lock"
+          } >> "$GITHUB_OUTPUT"
+
+  esteira:
+    needs: montar
+    if: ${{ !cancelled() && needs.montar.outputs.tag != '' }}
+    uses: ./.github/workflows/gitflow-esteira.yml
+    with:
+      TAG: ${{ needs.montar.outputs.tag }}
+      AMBIENTE: ${{ needs.montar.outputs.ambiente }}
+      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
+      GITFLOW_LOCK_MONTAGEM: ${{ needs.montar.outputs.lock }}
+      montar-workflow: ${{ inputs.montar-workflow }}
+      kit-repo: ${{ inputs.kit-repo }}
+      kit-ref: ${{ inputs.kit-ref }}
+    secrets:
+      GITFLOW_APP_ID: ${{ secrets.GITFLOW_APP_ID }}
+      GITFLOW_APP_KEY: ${{ secrets.GITFLOW_APP_KEY }}

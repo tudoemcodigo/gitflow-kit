@@ -1,0 +1,19 @@
+# Modelo de CI da aplicacao (build e testes do PR): sem segredos e com token somente leitura.
+# Copie para .github/workflows/app-ci.yml. Os scripts sao os do contrato com o kit (scripts/build.sh, scripts/test.sh).
+name: app-ci
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  construir-e-testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: sh scripts/build.sh
+      - name: Testes
+        run: sh scripts/test.sh

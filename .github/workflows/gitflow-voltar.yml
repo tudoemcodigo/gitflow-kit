@@ -1,0 +1,71 @@
+name: gitflow-voltar
+# Volta manual de um ambiente para a ultima build com deployment success (TL ou Release Manager), sob o lock do ambiente.
+on:
+  workflow_call:
+    inputs:
+      AMBIENTE:
+        description: qa, hom ou prd
+        type: string
+        required: true
+      kit-repo:
+        type: string
+        default: tudoemcodigo/gitflow-kit
+      kit-ref:
+        type: string
+        default: v1
+    secrets:
+      GITFLOW_APP_ID:
+        required: true
+      GITFLOW_APP_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  voltar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      AMBIENTE: ${{ inputs.AMBIENTE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          token: 'true'
+          app-id: ${{ secrets.GITFLOW_APP_ID }}
+          app-key: ${{ secrets.GITFLOW_APP_KEY }}
+      - name: Conferir o ambiente e o Team
+        working-directory: app
+        run: |
+          case "$AMBIENTE" in qa | hom | prd) ;; *) echo "ambiente invalido: $AMBIENTE" >&2; exit 1 ;; esac
+          sh "$KIT_DIR/ci/github-actions/exige-membro.sh" tech-leads release-managers
+      - id: trava
+        name: Pegar o lock do ambiente
+        working-directory: app
+        run: sh "$KIT_DIR/core/lock.sh" pegar "ambiente-$AMBIENTE" 1800
+      - name: Voltar
+        working-directory: app
+        run: sh "$KIT_DIR/core/voltar.sh" "$AMBIENTE"
+      - name: Soltar o lock do ambiente
+        if: success() && steps.trava.outcome == 'success'
+        working-directory: app
+        run: sh "$KIT_DIR/core/lock.sh" soltar "ambiente-$AMBIENTE"
+      - name: Volta falhou - lock mantido
+        if: failure() && steps.trava.outcome == 'success'
+        working-directory: app
+        run: |
+          echo "A volta de $AMBIENTE falhou: o lock ambiente-$AMBIENTE continua pego (intervencao humana; use o destravar)." >&2
+          # shellcheck disable=SC1091
+          . "$KIT_DIR/core/lib.sh"
+          carregar_config
+          if command -v notificar > /dev/null 2>&1; then notificar alerta "A volta manual de $AMBIENTE falhou: o ambiente segue travado." || true; fi
