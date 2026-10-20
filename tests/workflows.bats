@@ -29,6 +29,7 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
 
 @test "actionlint limpo em todos os workflows, na acao e nos chamadores" {
   command -v actionlint > /dev/null || skip "actionlint ausente"
+  # (no CI do kit o binario com checksum fixado entra no PATH pelo passo "instalar actionlint")
   run actionlint "$WF"/*.yml "$CH"/*.yml
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
@@ -69,7 +70,7 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
 }
 
 @test "nenhum run: interpola github.event.* ou inputs.* (so env:)" {
-  for f in $(reutilizaveis); do
+  for f in $(reutilizaveis) "$KIT_DIR/.github/actions/preparar/action.yml" "$CH"/*.yml; do
     run awk '
       /^[[:space:]]*run:/ { r = 1; ind = match($0, /[^ ]/) }
       r && /\$\{\{[^}]*(github\.event\.|inputs\.)/ { print FILENAME ": " $0; bad = 1 }
@@ -118,7 +119,7 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
   done
   job_bloco "$f" aprovacao | grep -q 'environment: production'
   job_bloco "$f" checagem | grep -q 'environment: checagem-${{ inputs.AMBIENTE }}'
-  job_bloco "$f" checagem | grep -q "needs.implantar.outputs.verificar == 'MANUAL'"
+  job_bloco "$f" checagem | grep -q "needs.verificar.outputs.verificar == 'MANUAL'"
   job_bloco "$f" falhou | grep -q 'failure()'
   grep -q 'GITFLOW_RUN_ID' "$KIT_DIR/.github/actions/preparar/action.yml"
   grep -q 'upload-artifact@v4' "$f"
@@ -136,4 +137,35 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
 @test "nada da empresa nos arquivos do kit" {
   run grep -rli 'dimep' "$KIT_DIR/.github" "$KIT_DIR/ci"
   [ "$status" -ne 0 ]
+}
+
+@test "token do App restrito ao repositorio e sem credencial persistida" {
+  a="$KIT_DIR/.github/actions/preparar/action.yml"
+  grep -q 'repositories: ${{ steps.repo.outputs.nome }}' "$a"
+  for f in $(reutilizaveis) "$a"; do
+    # todo checkout declara persist-credentials: false
+    n=$(grep -c 'uses: actions/checkout@v4' "$f")
+    m=$(grep -c 'persist-credentials: false' "$f")
+    [ "$n" -eq "$m" ] || { echo "$f: $n checkouts, $m persist-credentials"; false; }
+  done
+}
+
+@test "verificar-auto roda em job proprio sem token do App" {
+  f="$WF/gitflow-esteira.yml"
+  b=$(job_bloco "$f" verificar)
+  [ -n "$b" ]
+  printf '%s
+' "$b" | grep -q 'verificar-auto'
+  nao_tem "$b" "token: 'true'|secrets[.]"
+  nao_tem "$(job_bloco "$f" implantar)" 'verificar-auto'
+}
+
+@test "GITFLOW_RUN_ID e so o run_id (re-run mantem o dono dos locks)" {
+  a="$KIT_DIR/.github/actions/preparar/action.yml"
+  grep -q 'GITFLOW_RUN_ID=${RUN_ID}"' "$a"
+  nao_tem_arq "$a" 'run_attempt}[^/]|RUN_ATTEMPT'
+}
+
+@test "comandos so aceita OWNER/MEMBER/COLLABORATOR" {
+  grep -q 'author_association' "$WF/gitflow-comandos.yml"
 }

@@ -1,5 +1,6 @@
 name: gitflow-esteira
 # Esteira de publicacao (spec 4.1): um job por etapa; o estado passa por artefatos ($GITFLOW_SAIDA).
+# Run cancelado (ou checagem expirada) NAO desfaz nada e mantem os locks (P15): a saida e o workflow gitflow-destravar.
 on:
   workflow_call:
     inputs:
@@ -56,6 +57,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'
@@ -81,6 +83,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           ref: ${{ inputs.TAG }}
@@ -109,6 +112,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           ref: ${{ inputs.TAG }}
@@ -136,6 +140,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'
@@ -166,6 +171,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           ref: ${{ inputs.TAG }}
@@ -193,14 +199,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      verificar: ${{ steps.saida.outputs.verificar }}
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'
@@ -214,6 +219,36 @@ jobs:
       - name: Implantar
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" implantar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitflow-estado-3
+          path: ${{ runner.temp }}/gitflow/esteira.env
+          overwrite: true
+
+  # Roda scripts/checar.sh / smoke.sh da aplicacao: sem token do App e sem credencial do git.
+  verificar:
+    needs: implantar
+    if: ${{ !cancelled() && needs.implantar.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      verificar: ${{ steps.saida.outputs.verificar }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.kit-repo }}
+          ref: ${{ inputs.kit-ref }}
+          path: .gitflow
+          persist-credentials: false
+      - uses: ./.gitflow/.github/actions/preparar
+        with:
+          ref: ${{ inputs.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: gitflow-estado-3
+          path: ${{ runner.temp }}/gitflow
       - name: Verificar (automatica)
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" verificar-auto
@@ -223,16 +258,10 @@ jobs:
         run: |
           v=$(sed -n 's/^VERIFICAR=//p' "$GITFLOW_SAIDA/esteira.env" 2> /dev/null | tail -n 1 | tr -d '\r' || true)
           echo "verificar=$v" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: gitflow-estado-3
-          path: ${{ runner.temp }}/gitflow/esteira.env
-          overwrite: true
 
   checagem:
-    needs: implantar
-    if: needs.implantar.result == 'success' && needs.implantar.outputs.verificar == 'MANUAL' && !inputs.PULAR_CHECAGEM
+    needs: [implantar, verificar]
+    if: needs.verificar.result == 'success' && needs.verificar.outputs.verificar == 'MANUAL' && !inputs.PULAR_CHECAGEM
     runs-on: ubuntu-latest
     environment: checagem-${{ inputs.AMBIENTE }}
     permissions: {}
@@ -241,8 +270,8 @@ jobs:
         run: echo "Checagem de $TAG em $AMBIENTE aprovada."
 
   registrar:
-    needs: [implantar, checagem]
-    if: ${{ !cancelled() && needs.implantar.result == 'success' && (needs.checagem.result == 'success' || needs.checagem.result == 'skipped') }}
+    needs: [implantar, verificar, checagem]
+    if: ${{ !cancelled() && needs.implantar.result == 'success' && needs.verificar.result == 'success' && (needs.checagem.result == 'success' || needs.checagem.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -252,6 +281,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'
@@ -270,10 +300,11 @@ jobs:
         working-directory: app
         env:
           MONTAR_WORKFLOW: ${{ inputs.montar-workflow }}
+          MONTAR_REF: ${{ github.event.repository.default_branch }}
         run: sh "$KIT_DIR/ci/github-actions/disparar-montar.sh"
 
   falhou:
-    needs: [preparar, construir, testar, publicar-pacote, gates, aprovacao, implantar, checagem, registrar]
+    needs: [preparar, construir, testar, publicar-pacote, gates, aprovacao, implantar, verificar, checagem, registrar]
     if: failure()
     runs-on: ubuntu-latest
     permissions:
@@ -284,6 +315,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'

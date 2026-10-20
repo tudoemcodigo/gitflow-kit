@@ -47,6 +47,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'

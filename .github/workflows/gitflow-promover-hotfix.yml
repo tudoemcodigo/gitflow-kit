@@ -46,6 +46,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - uses: ./.gitflow/.github/actions/preparar
         with:
           token: 'true'
@@ -56,6 +57,7 @@ jobs:
         working-directory: app
         run: |
           hom=$(sh "$KIT_DIR/core/promover-hotfix.sh" "$QA_TAG" | tail -n 1 | tr -d '\r')
+          [ -n "$hom" ] || { echo "promover-hotfix nao informou a tag hom.*" >&2; exit 1; }
           echo "tag=$hom" >> "$GITHUB_OUTPUT"
 
   esteira:

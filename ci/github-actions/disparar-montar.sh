@@ -1,6 +1,6 @@
 #!/bin/sh
 # disparar-montar.sh: depois do PRD, remonta QA e HOM (FORCAR=true) disparando o workflow da aplicacao.
-# Env: MONTAR_WORKFLOW (arquivo na app, ex.: gitflow.yml), MONTAR_REF (padrao main). Requer permissao actions:write do App.
+# Env: MONTAR_WORKFLOW (arquivo na app, ex.: gitflow.yml), MONTAR_REF (branch padrao do repositorio; main se vazio). Requer permissao actions:write do App.
 # Falha ao disparar so alerta: o PRD ja foi publicado.
 set -eu
 KIT_DIR=${KIT_DIR:?KIT_DIR nao definido}
@@ -8,7 +8,7 @@ KIT_DIR=${KIT_DIR:?KIT_DIR nao definido}
 . "$KIT_DIR/core/lib.sh"
 carregar_config
 ARQ=${MONTAR_WORKFLOW:-gitflow.yml}
-REF=${MONTAR_REF:-main}
+REF=${MONTAR_REF:-main}   # o workflow passa a default_branch do repositorio
 for ALVO in qa hom; do
 # shellcheck disable=SC2016  # $ref/$alvo são variáveis do jq
   CORPO=$(jqb -nc --arg ref "$REF" --arg alvo "$ALVO" '{ref: $ref, inputs: {ALVO: $alvo, FORCAR: "true"}}')

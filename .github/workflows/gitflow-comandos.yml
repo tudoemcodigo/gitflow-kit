@@ -24,7 +24,7 @@ defaults:
 
 jobs:
   comandos:
-    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/')
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,6 +39,7 @@ jobs:
           repository: ${{ inputs.kit-repo }}
           ref: ${{ inputs.kit-ref }}
           path: .gitflow
+          persist-credentials: false
       - id: filtro
         name: Comando conhecido?
         run: |

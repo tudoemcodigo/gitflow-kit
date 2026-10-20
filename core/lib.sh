@@ -4,7 +4,7 @@
 # shellcheck disable=SC2034  # variáveis de configuração são usadas pelos scripts que carregam a lib
 
 export TZ=America/Sao_Paulo   # datas das tags no fuso local, em qualquer agente
-BOT="-c user.name=gitflow-bot -c user.email=${BOT_EMAIL:-gitflow-bot@users.noreply.github.com}"
+BOT="-c user.name=${BOT_NAME:-gitflow-bot} -c user.email=${BOT_EMAIL:-gitflow-bot@users.noreply.github.com}"
 
 # jq em modo binário: no Windows (Git Bash) o jq emitiria CRLF. Único ponto de chamada do jq.
 jqb() { command jq -b "$@"; }
