@@ -269,9 +269,12 @@ avancar() {
   fake_labels 1 | grep -F "Ambiente::QA"
 }
 
-@test "MODO_DEMO nao dispensa pipeline vermelho e nao comenta aviso" {
+@test "MODO_DEMO recusado depois do review nao comenta aviso" {
   pr_editar 1 '.reviews=[]'
-  fake_pipeline 1 "$(sha_de feature/PROJ-101-x)" failed
+  fake_descricao 1 "## Critério de aceite
+
+## Como testar
+x"
   MODO_DEMO=sim rodar criar-rc.sh
   assert_failure
   ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
@@ -286,4 +289,11 @@ avancar() {
   KIT_DIR="$BATS_TEST_TMPDIR/kit" rodar criar-rc.sh
   assert_failure
   ! git -C "$WORK" rev-parse -q --verify refs/tags/rc/PROJ-101.1
+}
+
+@test "MODO_DEMO sem review: aviso so apos a tag" {
+  pr_editar 1 '.reviews=[]'
+  MODO_DEMO=sim rodar criar-rc.sh
+  assert_success
+  fake_comentarios 1 | grep -F "⚠️ MODO_DEMO:"
 }

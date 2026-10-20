@@ -104,6 +104,7 @@ outra_entrega() {
   deploy qa qa.1 failed
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
+  refuso /aprovar "não está na build publicada e verificada"
   ! tem_tag qa-ok/PROJ-101.1
 }
 
@@ -112,6 +113,7 @@ outra_entrega() {
   deploy qa qa.0 success
   NOTA="/aprovar" rodar decidir.sh
   assert_failure
+  refuso /aprovar "não está na build publicada e verificada"
 }
 
 @test "reprovar vale para a ultima build montada mesmo sem deploy" {
@@ -246,4 +248,24 @@ outra_entrega() {
   MR_IID=5 AUTOR=tl1 NOTA="/retirar x" rodar decidir.sh
   assert_failure
   fake_comentarios 5 | grep -F "o MR não tem entrega"
+}
+
+@test "motivo com linha iniciada por # e espacos fica literal" {
+  publicar qa qa.1
+  NOTA=$(printf '/reprovar #42 quebrou\n# segunda\n  indentada  ') rodar decidir.sh
+  assert_success
+  local corpo
+  corpo=$(git -C "$WORK" tag -l --format='%(contents:body)' qa-nok/PROJ-101.1)
+  printf '%s\n' "$corpo" | grep -Fx '#42 quebrou'
+  printf '%s\n' "$corpo" | grep -Fx '# segunda'
+  printf '%s\n' "$corpo" | grep -Fx '  indentada  '
+}
+
+@test "reprovar-hom registra hom-nok" {
+  decisao_previa qa-ok
+  publicar hom hom.1
+  AUTOR=neg1 NOTA="/reprovar-hom nao atende" rodar decidir.sh
+  assert_success
+  tem_tag hom-nok/PROJ-101.1
+  [ "$(fake_labels 1)" = "Ambiente::HOM reprovado" ]
 }

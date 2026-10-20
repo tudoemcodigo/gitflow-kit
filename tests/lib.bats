@@ -174,3 +174,13 @@ corpo y" qa/1.0.0-rc.1
   [ "$(publicada qa)" = qa.1 ]
   [ -z "$(publicada hom)" ]
 }
+
+@test "ultima_build e publicada ordenam .10 acima de .9" {
+  git tag -a qa.2026-10-14.9 -m b HEAD
+  git tag -a qa.2026-10-14.10 -m b HEAD
+  git push -q origin main qa.2026-10-14.9 qa.2026-10-14.10
+  git push -q origin HEAD:refs/heads/qa
+  git fetch -q origin
+  [ "$(ultima_build qa)" = qa.2026-10-14.10 ]
+  [ "$(publicada qa)" = qa.2026-10-14.10 ]
+}

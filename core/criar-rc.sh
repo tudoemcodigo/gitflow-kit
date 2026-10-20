@@ -98,7 +98,7 @@ fi
 N=${ANT##*.}
 TAG="rc/$ID.$(( ${N:-0} + 1 ))"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
-git $BOT tag -a "$TAG" "$SHA" -m "Entrega de $ID (MR !$MR_IID) por @$AUTOR"
+git $BOT tag -a --cleanup=verbatim "$TAG" "$SHA" -m "Entrega de $ID (MR !$MR_IID) por @$AUTOR"
 git push -q origin "refs/tags/$TAG"
 if [ "$DEMO_SEM_REVIEW" = sim ]; then
   pr_comentar "$MR_IID" "⚠️ MODO_DEMO: code review de outra pessoa dispensado nesta entrega (só na demonstração)." || true

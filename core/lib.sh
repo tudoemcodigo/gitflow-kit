@@ -116,8 +116,8 @@ mrs_abertos() {
   done
 }
 
-publicada()        { git tag --points-at "origin/$1" -l "$1.*" --sort=-refname --sort=-creatordate 2> /dev/null | head -1; }   # build publicada = tag do ambiente no commit de origin/AMB
-ultima_build()     { git tag -l "$1.*" --sort=-refname --sort=-creatordate | head -1; }        # última montada (qa ou hom)
+publicada()        { git tag --points-at "origin/$1" -l "$1.*" --sort=-version:refname --sort=-creatordate 2> /dev/null | head -1; }   # build publicada = tag do ambiente no commit de origin/AMB
+ultima_build()     { git tag -l "$1.*" --sort=-version:refname --sort=-creatordate | head -1; }        # última montada (qa ou hom)
 assunto()          { [ -z "$1" ] || git tag -l --format='%(contents:subject)' "$1"; }
 manifesto_de()     { [ -z "$1" ] || git tag -l --format='%(contents:body)' "$1"; }
 contem()           { awk -v r="$2" '$1 == r {f = 1} END {exit !f}' "$1"; }

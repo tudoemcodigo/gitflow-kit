@@ -50,7 +50,8 @@ E=$(estado "$RC")
 BUILD="-"
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT INT TERM
+trap 'rm -rf "$TMP"' EXIT
+trap 'exit 1' INT TERM
 
 # P2: aprovação vale para a entrega publicada e verificada no ambiente.
 # Reprovação também vale para a última build montada do ambiente (ex.: falhou nos testes ou gates antes do deploy).
@@ -86,7 +87,7 @@ esac
   printf '%s\n' "$MOTIVO"
 } > "$TMP/msg"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
-git $BOT tag -a "$DEC/${RC#rc/}" "$RC^{commit}" -F "$TMP/msg"
+git $BOT tag -a --cleanup=verbatim "$DEC/${RC#rc/}" "$RC^{commit}" -F "$TMP/msg"
 git push -q origin "refs/tags/$DEC/${RC#rc/}"
 espelhar "$MR_IID" "$RC"
 case "$DEC" in qa-ok | qa-nok) pr_rotular "$MR_IID" "" "Reteste expresso,Suspeita de checagem" ;; esac
