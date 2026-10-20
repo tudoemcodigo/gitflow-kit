@@ -175,9 +175,12 @@ deploy_ok_anterior() {
     | last // empty | .ref' "$FAKE_DIR/deployments.json"
 }
 
-# release_criar TAG TEXTO
+# release_criar TAG TEXTO : idempotente (release já existente para a TAG = sucesso, sem duplicar)
 release_criar() {
   _fake_init
+  if _fjq -e --arg tag "$1" 'any(.[]; .tag == $tag)' "$FAKE_DIR/releases.json" > /dev/null; then
+    return 0
+  fi
   _fake_jq "$FAKE_DIR/releases.json" --arg tag "$1" --arg t "$2" \
     '. += [{tag:$tag, texto:$t}]'
 }
