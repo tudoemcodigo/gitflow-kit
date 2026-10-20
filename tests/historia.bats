@@ -72,6 +72,8 @@ dia4() {
   ! arvore_tem hom PROJ-102.txt || falha "dia 4: a 02 entrou na release"
   esteira prd v1.1.0
   igual "$(prd_atual)" v1.1.0 "dia 4: PRD v1.1.0"
+  git -C "$ORIGIN" cat-file -e "v1.1.0^{commit}:PROJ-101.txt"
+  ! git -C "$ORIGIN" cat-file -e "v1.1.0^{commit}:PROJ-102.txt" 2> /dev/null || falha "dia 4: a 02 esta na v1.1.0"
   igual "$(git -C "$ORIGIN" rev-parse refs/heads/main)" "$(git -C "$ORIGIN" rev-parse 'v1.1.0^{commit}')" "dia 4: main = v1.1.0"
   igual "$(jq -r .state "$FAKE_DIR/pr/11.json")" closed "dia 4: MR da 01 encerrado"
   igual "$(jq -r .state "$FAKE_DIR/pr/12.json")" opened "dia 4: MR da 02 aberto"

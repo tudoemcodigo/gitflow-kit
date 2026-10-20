@@ -56,6 +56,9 @@ setup() { e2e_setup; }
   lock_livre comandos
 }
 
+# Substituicao aceita: duas branches aprovadas nunca conflitam pelo fluxo normal (a segunda sempre cai "fora" como
+# entrega em teste), entao o conflito vem da main que anda (hotfix em PRD). O que se afirma e a reacao da linha
+# do doc 09: a montagem para e avisa.
 @test "P4 conflito entre branch aprovada e a main para a montagem e avisa" {
   # a 02 (aprovada no QA) e um hotfix mexem na mesma linha; o hotfix chega a PRD e a main anda
   ramo feature/PROJ-102-tarefa 12 README.md "linha da 102"
@@ -122,8 +125,7 @@ setup() { e2e_setup; }
   git -C "$WORK" add scripts
   git -C "$WORK" commit -q -m "chore: teste falhando"
   git -C "$WORK" push -q origin HEAD:main
-  git -C "$WORK" tag -f -a v1.0.0 -m v1.0.0 > /dev/null
-  git -C "$WORK" push -q -f origin refs/tags/v1.0.0
+  fixture_retag_prd
   montar qa
   B1="$MTAG"
   SHA=$(git -C "$ORIGIN" rev-parse "$B1^{commit}")
@@ -190,4 +192,22 @@ setup() { e2e_setup; }
   assert_success
   igual "$(git -C "$ORIGIN" rev-parse refs/heads/main)" "$(git -C "$ORIGIN" rev-parse 'v1.1.0^{commit}')" "main = v1.1.0"
   FORCAR=true montar qa # as montagens voltam
+}
+
+@test "helpers: etapa da esteira que falha faz montar_publicar retornar nao zero mesmo sob ||" {
+  tarefa PROJ-101 11
+  entregar 11
+  printf '%s
+' '#!/bin/sh' 'exit 1' > "$WORK/scripts/test.sh"
+  git -C "$WORK" add scripts
+  git -C "$WORK" commit -q -m "chore: teste falhando"
+  git -C "$WORK" push -q origin HEAD:main
+  fixture_retag_prd
+  r=0
+  montar_publicar qa 2> /dev/null || r=$?
+  [ "$r" -ne 0 ]
+  r=0
+  esteira qa "$(git -C "$ORIGIN" tag -l 'qa.*' | head -1)" preparar construir testar publicar-pacote 2> /dev/null || r=$?
+  [ "$r" -ne 0 ]
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/heads/qa || false
 }

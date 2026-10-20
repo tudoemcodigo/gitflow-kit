@@ -27,10 +27,19 @@ e2e_setup() {
   git -C "$WORK" add scripts
   git -C "$WORK" commit -q -m "chore: scripts"
   git -C "$WORK" push -q origin main
-  # PRD atual = v1.0.0 (o setup_repo), reposta no commit com os scripts (fixture: a main tem de ser igual a PRD);
-  # a release da historia sai como v1.1.0
-  git -C "$WORK" tag -f -a v1.0.0 -m v1.0.0 > /dev/null
+  # PRD atual = v1.0.0 (o setup_repo); a release da historia sai como v1.1.0
+  fixture_retag_prd
+}
+# fixture_retag_prd: reposiciona a v1.0.0 (so em fixture de teste) no HEAD da main, para a main ser igual a PRD
+fixture_retag_prd() {
+  git -C "$WORK" tag -f -a v1.0.0 -m v1.0.0 > /dev/null || return 1
   git -C "$WORK" push -q -f origin refs/tags/v1.0.0
+}
+# rodar_out SCRIPT ARGS: como rodar, mas devolve so o stdout em $saida; o stderr aparece no teste
+rodar_out() {
+  local s="$1"
+  shift
+  saida=$(env PATH="$KIT_DIR/core:$PATH" sh -c 'cd "$1" && shift && exec "$@"' _ "$WORK" sh "$KIT_DIR/core/$s" "$@")
 }
 
 # ---------- util ----------
@@ -45,29 +54,29 @@ n_tags() { git -C "$ORIGIN" tag -l "$1" | wc -l | tr -d ' '; }
 # ramo BRANCH IID ARQUIVO CONTEUDO [BASE]: branch a partir de BASE (origin/main), PR aberto com tudo verde
 ramo() {
   local br="$1" iid="$2" arq="$3" cont="$4" base="${5:-origin/main}" sha
-  git -C "$WORK" fetch -q origin
-  git -C "$WORK" checkout -q -B "$br" "$base"
-  echo "$cont" > "$WORK/$arq"
-  git -C "$WORK" add "$arq"
-  git -C "$WORK" commit -q -m "feat: $br $cont"
-  git -C "$WORK" push -q -f origin "$br"
-  sha=$(git -C "$WORK" rev-parse HEAD)
-  fake_pr "$iid" "$br" dev
-  fake_pipeline "$iid" "$sha" success
-  fake_review "$iid" rev "$sha"
-  fake_descricao "$iid" "$DESC_OK"
+  git -C "$WORK" fetch -q origin || return 1
+  git -C "$WORK" checkout -q -B "$br" "$base" || return 1
+  echo "$cont" > "$WORK/$arq" || return 1
+  git -C "$WORK" add "$arq" || return 1
+  git -C "$WORK" commit -q -m "feat: $br $cont" || return 1
+  git -C "$WORK" push -q -f origin "$br" || return 1
+  sha=$(git -C "$WORK" rev-parse HEAD) || return 1
+  fake_pr "$iid" "$br" dev || return 1
+  fake_pipeline "$iid" "$sha" success || return 1
+  fake_review "$iid" rev "$sha" || return 1
+  fake_descricao "$iid" "$DESC_OK" || return 1
 }
 # tarefa ID IID [VERSAO_DO_CONTEUDO [BASE]]: feature/ID-tarefa com o arquivo ID.txt
 tarefa() { ramo "feature/$1-tarefa" "$2" "$1.txt" "$1 v${3:-1}" "${4:-origin/main}"; }
 # entregar IID [NOTA]: /entregar (criar-rc) pelo dev
 entregar() {
   AUTOR=dev MR_IID="$1" NOTA="${2:-}" rodar criar-rc.sh
-  [ "$status" -eq 0 ] || falha "entregar !$1: $output"
+  [ "$status" -eq 0 ] || { falha "entregar !$1: $output"; return 1; }
 }
 # dec USUARIO IID "/comando motivo"
 dec() {
   AUTOR="$1" MR_IID="$2" NOTA="$3" rodar decidir.sh
-  [ "$status" -eq 0 ] || falha "$3 (!$2) por $1: $output"
+  [ "$status" -eq 0 ] || { falha "$3 (!$2) por $1: $output"; return 1; }
 }
 
 # ---------- montagem + esteira ----------
@@ -78,13 +87,13 @@ esteira() {
   etapas="${*:-preparar construir testar publicar-pacote gates implantar verificar-auto registrar}"
   for e in $etapas; do
     TAG="$tag" AMBIENTE="$amb" rodar esteira.sh "$e"
-    [ "$status" -eq 0 ] || falha "esteira $amb $tag etapa $e: $output"
+    [ "$status" -eq 0 ] || { falha "esteira $amb $tag etapa $e: $output"; return 1; }
   done
 }
 # montar ALVO: fluxo-montar.sh (manual por padrao: QUEM=qa1; QUEM=timer = agendada). Define MTAG ("" = nada)
 montar() {
   BUILD_USER_ID="${QUEM:-qa1}" rodar fluxo-montar.sh "$1"
-  [ "$status" -eq 0 ] || falha "montar $1: $output"
+  [ "$status" -eq 0 ] || { falha "montar $1: $output"; return 1; }
   MTAG=$(cat "$GITFLOW_SAIDA/montagem.tag")
 }
 amb_de() { case "$1" in qa | hotfix) echo qa ;; *) echo hom ;; esac; }
@@ -119,11 +128,12 @@ aprovar_ate_hom() {
 # release_ate_tag VERSAO ISSUE: RM monta a release, QA registra a regressao, RM cria a vX.Y.Z. Define RHOM.
 release_ate_tag() {
   VERSAO="$1" QUEM=rm1 montar_publicar release || return 1
+  [ -n "$MTAG" ] || { falha "a montagem da release nao gerou build"; return 1; }
   RHOM="$MTAG"
   BUILD_USER_ID=qa1 rodar regressao.sh "$RHOM" ok "$2"
-  [ "$status" -eq 0 ] || falha "regressao: $output"
+  [ "$status" -eq 0 ] || { falha "regressao: $output"; return 1; }
   BUILD_USER_ID=rm1 rodar criar-release.sh "$1" "$RHOM" "$2"
-  [ "$status" -eq 0 ] || falha "criar-release: $output"
+  [ "$status" -eq 0 ] || { falha "criar-release: $output"; return 1; }
 }
 # hotfix_ate_prd X.Y.Z IID ARQUIVO CONTEUDO: hotfix completo ate PRD (QA, aprovacao, HOM, homologacao, regressao, release)
 hotfix_ate_prd() {
@@ -133,13 +143,15 @@ hotfix_ate_prd() {
   entregar "$iid" || return 1
   HOTFIX="$ver" QUEM=rm1 montar_publicar hotfix || return 1
   dec qa1 "$iid" "/aprovar" || return 1
-  RHOM=$(BUILD_USER_ID=rm1 PATH="$KIT_DIR/core:$PATH" sh -c 'cd "$1" && shift && exec "$@" 2> /dev/null' _ "$WORK" sh "$KIT_DIR/core/promover-hotfix.sh" "$MTAG")     || falha "promover-hotfix falhou"
+  [ -n "$MTAG" ] || { falha "a montagem do hotfix nao gerou build"; return 1; }
+  BUILD_USER_ID=rm1 rodar_out promover-hotfix.sh "$MTAG" || { falha "promover-hotfix falhou"; return 1; }
+  RHOM="$saida"
   esteira hom "$RHOM" || return 1
   dec neg1 "$iid" "/homologar" || return 1
   BUILD_USER_ID=qa1 rodar regressao.sh "$RHOM" ok 1
-  [ "$status" -eq 0 ] || falha "regressao: $output"
+  [ "$status" -eq 0 ] || { falha "regressao: $output"; return 1; }
   BUILD_USER_ID=rm1 rodar criar-release.sh "$ver" "$RHOM" 1
-  [ "$status" -eq 0 ] || falha "criar-release: $output"
+  [ "$status" -eq 0 ] || { falha "criar-release: $output"; return 1; }
   esteira prd "v$ver" || return 1
 }
 # hook_recusa_ref PADRAO: o origin recusa o push de refs que casam com o padrao
