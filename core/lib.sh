@@ -26,6 +26,11 @@ carregar_config() {
       _k=${_l%%=*}
       case "$_k" in '' | *[!A-Z0-9_]*) continue ;; esac
       # lista de chaves permitidas: o arquivo nunca define PATH, BASH_ENV, GIT_*, LD_*, IFS...
+      # destinos que recebem credencial e segredos: só pelo ambiente, nunca pelo arquivo da aplicação
+      case "$_k" in
+        PAGES_REMOTE | ARTEFATOS_URL | ARTEFATOS_DIR | DEPLOY_DIR | *_REMOTE | *_TOKEN | *_SENHA | *_PASSWORD | *_WEBHOOK)
+          echo "chave não permitida em .gitflow.env: $_k (defina pelo ambiente)" >&2; continue ;;
+      esac
       case "$_k" in
         GITFLOW_PROVIDER | ARTEFATOS | DEPLOY | NOTIFICAR | LIMITE_QA | ID_REGEX | MODO_DEMO | TERMO_PR | TZ) ;;
         GRUPO_* | URL_* | PAGES_* | ARTEFATOS_* | DEPLOY_* | NOTIFICAR_*) ;;

@@ -250,3 +250,30 @@ corpo y" qa/1.0.0-rc.1
   [ "$URL_QA" = http://x ]
   [ "$MODO_DEMO" = sim ]
 }
+
+@test "carregar_config: destinos de credencial e segredos so pelo ambiente" {
+  {
+    printf 'PAGES_REMOTE=https://evil.example/x.git\n'
+    printf 'NOTIFICAR_WEBHOOK=https://hooks.example/s\n'
+    printf 'DEPLOY_DIR=/tmp/d\n'
+    printf 'ARTEFATOS_URL=https://evil.example\n'
+    printf 'GRUPO_X_TOKEN=abc\n'
+    printf 'URL_QA=http://qa.example\n'
+  } > .gitflow.env
+  unset PAGES_REMOTE NOTIFICAR_WEBHOOK DEPLOY_DIR ARTEFATOS_URL GRUPO_X_TOKEN URL_QA
+  run --separate-stderr carregar_config
+  [ "$status" -eq 0 ]
+  for k in PAGES_REMOTE NOTIFICAR_WEBHOOK DEPLOY_DIR ARTEFATOS_URL GRUPO_X_TOKEN; do
+    [[ "$stderr" == *"chave não permitida em .gitflow.env: $k"* ]]
+  done
+  carregar_config 2> /dev/null
+  [ -z "${PAGES_REMOTE:-}" ]
+  [ -z "${NOTIFICAR_WEBHOOK:-}" ]
+  [ -z "${DEPLOY_DIR:-}" ]
+  [ -z "${GRUPO_X_TOKEN:-}" ]
+  [ "$URL_QA" = http://qa.example ]
+  # o ambiente continua valendo
+  export NOTIFICAR_WEBHOOK=https://hooks.example/env
+  carregar_config 2> /dev/null
+  [ "$NOTIFICAR_WEBHOOK" = https://hooks.example/env ]
+}
