@@ -76,6 +76,23 @@ release_com_assets() {   # lista JSON de assets
   [ "$(grep '^POST /repos/acme/app/releases ' "$GH_LOG" | sed 's/^POST [^ ]* //' | jq -r '.prerelease, .tag_name' | tr '\n' ' ')" = "true pacotes " ]
 }
 
+@test "publicar: corrida na criacao da release (422) recupera a existente" {
+  echo '[]' > "$GH_FIX/GET_repos_acme_app_releases_7_assets_per_page_100.json"
+  gh_api() {
+    printf '%s %s %s
+' "$1" "$2" "${3:-}" >> "$GH_LOG"
+    case "$1 $2" in
+      "GET /repos/acme/app/releases/tags/pacotes")
+        if [ -f "$BATS_TEST_TMPDIR/criada" ]; then echo '{"id":7}'; else return 44; fi ;;
+      "POST /repos/acme/app/releases") : > "$BATS_TEST_TMPDIR/criada"; return 42 ;;
+      *) echo '{}' ;;
+    esac
+  }
+  run artefatos_publicar abc "$ZIP"
+  [ "$status" -eq 0 ]
+  grep -q '^UP /repos/acme/app/releases/7/assets' "$GH_LOG"
+}
+
 @test "publicar com release existente envia os dois assets na ordem" {
   release_com_assets '[]'
   run artefatos_publicar abc "$ZIP"
@@ -252,6 +269,36 @@ pages_ver() {   # CAMINHO -> conteudo do arquivo em gh-pages
   [ "$status" -ne 0 ]
 }
 
+@test "pages: push recusado refaz a partir de clone novo (corrida entre ambientes)" {
+  pages_setup
+  deploy_instalar prd sha1 1.0.0 "$ZIP"
+  # outro ambiente publica entre o clone e o push: o primeiro push e recusado e o outro commit entra no gh-pages
+  mkdir -p "$PAGES_BARE/hooks"
+  cat > "$PAGES_BARE/hooks/pre-receive" <<EOS
+#!/bin/sh
+n=\$(cat "$BATS_TEST_TMPDIR/pr" 2> /dev/null || echo 0)
+echo \$((n + 1)) > "$BATS_TEST_TMPDIR/pr"
+[ "\$n" -ge 1 ]
+EOS
+  chmod +x "$PAGES_BARE/hooks/pre-receive"
+  run deploy_instalar hom shah 1.0.0-rc.1 "$ZIP2"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$BATS_TEST_TMPDIR/pr")" -eq 2 ]
+  [ "$(pages_ver hom/version.json | jq -r .sha)" = shah ]
+  [ "$(pages_ver version.json | jq -r .sha)" = sha1 ]
+}
+
+@test "pages: push sempre recusado falha apos as tentativas" {
+  pages_setup
+  mkdir -p "$PAGES_BARE/hooks"
+  printf '#!/bin/sh
+exit 1
+' > "$PAGES_BARE/hooks/pre-receive"
+  chmod +x "$PAGES_BARE/hooks/pre-receive"
+  run deploy_instalar qa sha1 1.0.0 "$ZIP"
+  [ "$status" -eq 1 ]
+}
+
 @test "pages: qa nao toca hom/ nem a raiz" {
   pages_setup
   deploy_instalar prd sha1 1.0.0 "$ZIP"
@@ -354,6 +401,26 @@ STUB
   unset SAUDE_SHA
   deploy_instalar prd sha9 1.0.0 "$ZIP"
   deploy_saude prd
+}
+
+@test "saude: curl com --max-time" {
+  pages_setup
+  export URL_QA=https://acme.github.io/app/qa PAGES_TENTATIVAS=1 PAGES_INTERVALO=0 FALHAS=0 RESP_SHA=sha1
+  curl_saude_stub
+  sed -i 's/^for a; do u=\$a; done/printf "%s\n" "$*" >> "$BATS_TEST_TMPDIR\/cargs"; for a; do u=$a; done/' "$BATS_TEST_TMPDIR/bin/curl"
+  run deploy_saude qa sha1
+  [ "$status" -eq 0 ]
+  grep -q -- '--max-time' "$BATS_TEST_TMPDIR/cargs"
+}
+
+@test "webhook com aspas e barra e escapado no config do curl" {
+  curl_webhook_stub
+  export NOTIFICAR_WEBHOOK='https://h.example/a"b\c'
+  # shellcheck source=/dev/null
+  . "$KIT_DIR/adapters/notificar/slack.sh"
+  run notificar info oi
+  [ "$status" -eq 0 ]
+  grep -qF 'url = "https://h.example/a\"b\\c"' "$BATS_TEST_TMPDIR/wh.cfg"
 }
 
 @test "saude: ambiente invalido ou sem URL falha" {

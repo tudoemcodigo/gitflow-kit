@@ -20,14 +20,16 @@ _ghr_garantir() {
   [ $? -eq 44 ] || return 1
   _ghg_b=$(_gjq -nc --arg tag "$(_ghr_tag)" '{tag_name: $tag, name: $tag, prerelease: true,
     body: "Pacotes de build (gerenciada pelo gitflow). Nao apagar."}') || return 1
-  if _ghg_d=$(gh_api POST "$(_gh_r)/releases" "$_ghg_b"); then
-    _ghg_i=$(printf '%s' "$_ghg_d" | _gjq -r '.id // empty') || return 1
-    [ -n "$_ghg_i" ] || return 1
-    printf '%s\n' "$_ghg_i"
-    return 0
-  fi
-  # corrida: outra execucao criou entre a checagem e o POST
-  [ $? -eq 42 ] && _ghr_id
+  _ghg_d=$(gh_api POST "$(_gh_r)/releases" "$_ghg_b") || {
+    _ghg_rc=$?
+    # corrida: outra execucao criou entre a checagem e o POST
+    [ "$_ghg_rc" -eq 42 ] && _ghr_id
+    return
+  }
+  _ghg_i=$(printf '%s' "$_ghg_d" | _gjq -r '.id // empty') || return 1
+  [ -n "$_ghg_i" ] || return 1
+  printf '%s
+' "$_ghg_i"
 }
 
 # _ghr_asset ID NOME : imprime o id do asset NOME da release ID (vazio = ausente); !=0 = erro
@@ -81,7 +83,10 @@ artefatos_publicar() {   # SHA ZIP
 }
 
 artefatos_baixar() {   # SHA DESTINO (diretório, ou caminho do arquivo)
-  _ghd_i=$(_ghr_id) || { echo "pacote app-$1.zip não existe." >&2; return 1; }
+  _ghd_i=$(_ghr_id) || {
+    if [ $? -eq 44 ]; then echo "pacote app-$1.zip não existe." >&2; else echo "erro ao consultar a release de pacotes." >&2; fi
+    return 1
+  }
   _ghd_z=$(_ghr_asset "$_ghd_i" "app-$1.zip") || return 1
   _ghd_s=$(_ghr_asset "$_ghd_i" "app-$1.zip.sha256") || return 1
   if [ -z "$_ghd_z" ] || [ -z "$_ghd_s" ]; then echo "pacote app-$1.zip não existe." >&2; return 1; fi

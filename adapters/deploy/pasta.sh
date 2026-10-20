@@ -19,8 +19,9 @@ deploy_instalar() {   # AMB SHA VERSAO ZIP
   mv "$_novo" "$DEPLOY_DIR/$1"
 }
 
-deploy_saude() {   # AMB
+deploy_saude() {   # AMB [SHA]: com SHA, o version.json também precisa tê-lo
   : "${DEPLOY_DIR:?DEPLOY_DIR não definido}"
   _deploy_amb "$1" || return 1
-  [ -f "$DEPLOY_DIR/$1/version.json" ]
+  [ -f "$DEPLOY_DIR/$1/version.json" ] || return 1
+  [ -z "${2:-}" ] || [ "$(jqb -r '.sha // empty' "$DEPLOY_DIR/$1/version.json" 2> /dev/null)" = "$2" ]
 }

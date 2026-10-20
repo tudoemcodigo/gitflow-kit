@@ -303,60 +303,14 @@ _gh_uploads_base() {
 # imprime o codigo HTTP; o corpo da resposta vai para SAIDA
 _gh_curl_arq() {
   : "${GITHUB_TOKEN:?GITHUB_TOKEN nao definido}"
-  _gc_auth=$(mktemp) || return 1
-  ( umask 077; printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" > "$_gc_auth" )
-  set -- -sS -L -X "$1" -o "$3" -w '%{http_code}' -H "@$_gc_auth" -H "Accept: $6" \
-    -H 'X-GitHub-Api-Version: 2022-11-28' ${4:+-H "Content-Type: $5" --data-binary "@$4"} "$2"
-  curl "$@" < /dev/null || true
-  rm -f "$_gc_auth"
-}
-
-_gh_codigo() {   # CODIGO METODO CAMINHO -> mesmo mapeamento do gh_api
-  case "$1" in
-    2??) return 0 ;;
-    404) return 44 ;;
-    422) return 42 ;;
-    *) printf 'gh_api: HTTP %s em %s %s\n' "${1:-000}" "$2" "$3" >&2; return 1 ;;
-  esac
-}
-
-# gh_upload CAMINHO_UPLOAD ARQUIVO CONTENT_TYPE : POST do arquivo em <uploads>CAMINHO_UPLOAD; resposta na saida padrao
-gh_upload() {
-  _gup_out=$(mktemp) || return 1
-  _gup_code=$(_gh_curl_arq POST "$(_gh_uploads_base)$1" "$_gup_out" "$2" "$3" 'application/vnd.github+json') || true
-  cat "$_gup_out"
-  rm -f "$_gup_out"
-  _gh_codigo "$_gup_code" POST "$1"
-}
-
-# gh_baixar CAMINHO DESTINO : GET binario (Accept: application/octet-stream) gravado em DESTINO
-gh_baixar() {
-  _gb_code=$(_gh_curl_arq GET "$(_gh_base)$1" "$2" '' '' 'application/octet-stream') || true
-  _gh_codigo "$_gb_code" GET "$1" || { _gb_rc=$?; rm -f "$2"; return "$_gb_rc"; }
-}
-
-# ---------- transferencia de arquivos (assets de release) ----------
-
-# URL base de uploads, derivada de GITHUB_API_URL: api.github.com -> uploads.github.com; GHES <host>/api/v3 -> <host>/api/uploads
-_gh_uploads_base() {
-  _gu_b=$(_gh_base)
-  case "$_gu_b" in
-    https://api.github.com) printf 'https://uploads.github.com' ;;
-    */api/v3) printf '%s/api/uploads' "${_gu_b%/api/v3}" ;;
-    *) printf '%s' "$_gu_b" ;;
-  esac
-}
-
-# _gh_curl_arq METODO URL SAIDA ARQ_CORPO_OU_VAZIO CONTENT_TYPE ACCEPT : curl com o token em arquivo (nunca no argv);
-# imprime o codigo HTTP; o corpo da resposta vai para SAIDA
-_gh_curl_arq() {
-  : "${GITHUB_TOKEN:?GITHUB_TOKEN nao definido}"
-  _gc_auth=$(mktemp) || return 1
-  ( umask 077; printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" > "$_gc_auth" )
-  set -- -sS -L -X "$1" -o "$3" -w '%{http_code}' -H "@$_gc_auth" -H "Accept: $6" \
-    -H 'X-GitHub-Api-Version: 2022-11-28' ${4:+-H "Content-Type: $5" --data-binary "@$4"} "$2"
-  curl "$@" < /dev/null || true
-  rm -f "$_gc_auth"
+  (
+    _gc_auth=$(mktemp) || exit 1
+    trap 'rm -f "$_gc_auth"' EXIT INT TERM
+    ( umask 077; printf 'Authorization: Bearer %s
+' "$GITHUB_TOKEN" > "$_gc_auth" )
+    set -- -sS -L -X "$1" -o "$3" -w '%{http_code}' -H "@$_gc_auth" -H "Accept: $6"       -H 'X-GitHub-Api-Version: 2022-11-28' ${4:+-H "Content-Type: $5" --data-binary "@$4"} "$2"
+    curl "$@" < /dev/null || true
+  )
 }
 
 _gh_codigo() {   # CODIGO METODO CAMINHO -> mesmo mapeamento do gh_api

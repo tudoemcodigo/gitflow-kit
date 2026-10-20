@@ -250,7 +250,32 @@ CONSTRUIR=nao
   est verificar-auto
   assert_failure
   mkdir -p "$DEPLOY_DIR/prd"
-  echo '{}' > "$DEPLOY_DIR/prd/version.json"
+  echo '{"sha":"outro"}' > "$DEPLOY_DIR/prd/version.json"
+  est verificar-auto
+  assert_failure
+  echo '{"sha":"x"}' > "$DEPLOY_DIR/prd/version.json"
+  est verificar-auto
+  assert_success
+  grep -q '^VERIFICAR=OK$' "$GITFLOW_SAIDA/esteira.env"
+}
+
+@test "prd: verificar-auto em processo proprio, apos implantar, confere o sha" {
+  build_qa 1
+  TAG=qa.2026-01-01.1
+  passos preparar construir testar publicar-pacote
+  SHA1=$(git -C "$WORK" rev-parse HEAD)
+  rm -f "$GITFLOW_SAIDA/esteira.env"
+  git -C "$WORK" tag -a --cleanup=verbatim hom.2026-01-01.1 -m "Release 1.1.0"
+  git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m ok
+  git -C "$WORK" tag -a v1.1.0 -m v1.1.0
+  git -C "$WORK" push -q origin main v1.1.0 hom.2026-01-01.1
+  AMB=prd
+  TAG=v1.1.0
+  printf 'SHA=%s
+CONSTRUIR=nao
+' "$SHA1" > "$GITFLOW_SAIDA/esteira.env"
+  est implantar
+  assert_success
   est verificar-auto
   assert_success
   grep -q '^VERIFICAR=OK$' "$GITFLOW_SAIDA/esteira.env"

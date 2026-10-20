@@ -126,7 +126,7 @@ case "$ETAPA" in
       salvar VERIFICAR PULADA; echo "checagem pulada (R7)"; exit 0
     fi
     if [ "$AMB" = prd ]; then
-      if [ -f scripts/smoke.sh ]; then sh scripts/smoke.sh prd; else deploy_saude prd; fi
+      if [ -f scripts/smoke.sh ]; then sh scripts/smoke.sh prd; else deploy_saude prd "$SHA"; fi
     elif [ -f scripts/checar.sh ]; then
       sh scripts/checar.sh "$AMB"
     else
