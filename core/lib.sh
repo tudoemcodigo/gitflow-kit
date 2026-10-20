@@ -19,11 +19,18 @@ carregar_config() {
   # Só linhas CHAVE=VALOR com CHAVE em [A-Z_][A-Z0-9_]*; aspas externas (simples ou duplas) são removidas.
   # O ambiente vence o arquivo: valor do arquivo só vale se a variável ainda não existe.
   if [ -f .gitflow.env ]; then
+    _lc=${LC_ALL-__nao__}; LC_ALL=C   # classes [A-Z]/[!A-Z0-9_] sem surpresas de locale
     while IFS= read -r _l || [ -n "$_l" ]; do
       _l=$(printf '%s' "$_l" | tr -d '\015')
       case "$_l" in [A-Z_]*=*) ;; *) continue ;; esac
       _k=${_l%%=*}
       case "$_k" in '' | *[!A-Z0-9_]*) continue ;; esac
+      # lista de chaves permitidas: o arquivo nunca define PATH, BASH_ENV, GIT_*, LD_*, IFS...
+      case "$_k" in
+        GITFLOW_PROVIDER | ARTEFATOS | DEPLOY | NOTIFICAR | LIMITE_QA | ID_REGEX | MODO_DEMO | TERMO_PR | TZ) ;;
+        GRUPO_* | URL_* | PAGES_* | ARTEFATOS_* | DEPLOY_* | NOTIFICAR_*) ;;
+        *) echo "chave não permitida em .gitflow.env: $_k" >&2; continue ;;
+      esac
       _v=${_l#*=}
       case "$_v" in
         \"*\") _v=${_v#\"}; _v=${_v%\"} ;;
@@ -35,6 +42,7 @@ carregar_config() {
         export "${_k?}"
       fi
     done < .gitflow.env
+    if [ "$_lc" = __nao__ ]; then unset LC_ALL; else LC_ALL=$_lc; fi
   fi
   : "${LIMITE_QA:=6}"
   : "${ID_REGEX:=[A-Z]+-[0-9]+}"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() {
   setup_repo
@@ -188,22 +189,22 @@ corpo y" qa/1.0.0-rc.1
 @test "carregar_config: .gitflow.env e lido literalmente (sem eval, sem expansao)" {
   rm -f "$BATS_TEST_TMPDIR/marker" "$BATS_TEST_TMPDIR/marker2"
   {
-    printf 'XA=$(touch %s/marker)\n' "$BATS_TEST_TMPDIR"
-    printf 'XB=`touch %s/marker2`\n' "$BATS_TEST_TMPDIR"
-    printf 'XC="com aspas $HOME"\n'
-    printf "XD='simples'\n"
-    printf 'x_minuscula=1\n'
-    printf 'XE; touch %s/marker=1\n' "$BATS_TEST_TMPDIR"
+    printf 'URL_A=$(touch %s/marker)\n' "$BATS_TEST_TMPDIR"
+    printf 'URL_B=`touch %s/marker2`\n' "$BATS_TEST_TMPDIR"
+    printf 'URL_C="com aspas $HOME"\n'
+    printf "URL_D='simples'\n"
+    printf 'url_minuscula=1\n'
+    printf 'URL_E; touch %s/marker=1\n' "$BATS_TEST_TMPDIR"
   } > .gitflow.env
-  unset XA XB XC XD x_minuscula
+  unset URL_A URL_B URL_C URL_D url_minuscula
   carregar_config
   [ ! -e "$BATS_TEST_TMPDIR/marker" ]
   [ ! -e "$BATS_TEST_TMPDIR/marker2" ]
-  [ "$XA" = "\$(touch $BATS_TEST_TMPDIR/marker)" ]
-  [ "$XB" = "\`touch $BATS_TEST_TMPDIR/marker2\`" ]
-  [ "$XC" = 'com aspas $HOME' ]
-  [ "$XD" = simples ]
-  [ -z "${x_minuscula:-}" ]
+  [ "$URL_A" = "\$(touch $BATS_TEST_TMPDIR/marker)" ]
+  [ "$URL_B" = "\`touch $BATS_TEST_TMPDIR/marker2\`" ]
+  [ "$URL_C" = 'com aspas $HOME' ]
+  [ "$URL_D" = simples ]
+  [ -z "${url_minuscula:-}" ]
 }
 
 @test "carregar_config: nome de adaptador com / ou . e recusado" {
@@ -220,4 +221,32 @@ corpo y" qa/1.0.0-rc.1
   unset DEPLOY NOTIFICAR
   run carregar_config
   [ "$status" -ne 0 ]
+}
+
+@test "carregar_config: chaves fora da lista permitida sao ignoradas com aviso" {
+  rm -f "$BATS_TEST_TMPDIR/pwn"
+  {
+    printf 'BASH_ENV=%s/pwn\n' "$BATS_TEST_TMPDIR"
+    printf 'GIT_SSH_COMMAND=touch %s/pwn\n' "$BATS_TEST_TMPDIR"
+    printf 'PATH=/nada\n'
+    printf 'LD_PRELOAD=/x.so\n'
+    printf 'GRUPO_QA=meu-qa\n'
+    printf 'URL_QA=http://x\n'
+    printf 'MODO_DEMO=sim\n'
+  } > .gitflow.env
+  unset BASH_ENV GIT_SSH_COMMAND LD_PRELOAD GRUPO_QA URL_QA MODO_DEMO
+  PATH_ANTES=$PATH
+  run --separate-stderr carregar_config
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"chave não permitida em .gitflow.env: BASH_ENV"* ]]
+  [[ "$stderr" == *"chave não permitida em .gitflow.env: GIT_SSH_COMMAND"* ]]
+  [[ "$stderr" == *"chave não permitida em .gitflow.env: PATH"* ]]
+  carregar_config 2> /dev/null
+  [ -z "${BASH_ENV:-}" ]
+  [ -z "${GIT_SSH_COMMAND:-}" ]
+  [ -z "${LD_PRELOAD:-}" ]
+  [ "$PATH" = "$PATH_ANTES" ]
+  [ "$GRUPO_QA" = meu-qa ]
+  [ "$URL_QA" = http://x ]
+  [ "$MODO_DEMO" = sim ]
 }
