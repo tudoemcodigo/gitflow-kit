@@ -41,6 +41,45 @@ carregar_config() {
     # shellcheck source=/dev/null
     . "$_kd/adapters/notificar/$NOTIFICAR.sh"
   fi
+  if [ -n "${ARTEFATOS:-}" ]; then
+    # shellcheck source=/dev/null
+    . "$_kd/adapters/artefatos/$ARTEFATOS.sh"
+  fi
+  if [ -n "${DEPLOY:-}" ]; then
+    # shellcheck source=/dev/null
+    . "$_kd/adapters/deploy/$DEPLOY.sh"
+  fi
+}
+
+# zip portátil: python3 (presente nos dois SOs do CI), senão zip/unzip, senão PowerShell (Windows)
+_py_zip() { python3 -c 'import zipfile' > /dev/null 2>&1; }
+zip_criar() {   # DIR ZIP: zipa o conteúdo de DIR (a raiz do zip é o conteúdo)
+  if _py_zip; then
+    python3 -I -c '
+import os, sys, zipfile
+src, out = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for r, ds, fs in os.walk(src):
+        ds.sort()
+        for f in sorted(fs):
+            p = os.path.join(r, f)
+            z.write(p, os.path.relpath(p, src))
+' "$1" "$2"
+  elif command -v zip > /dev/null 2>&1; then
+    _o=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
+    (cd "$1" && zip -qr "$_o" .)
+  else
+    powershell.exe -NoProfile -Command "Compress-Archive -Path '$1/*' -DestinationPath '$2' -Force"
+  fi
+}
+zip_extrair() {   # ZIP DIR
+  if _py_zip; then
+    python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$1" "$2"
+  elif command -v unzip > /dev/null 2>&1; then
+    unzip -q "$1" -d "$2"
+  else
+    powershell.exe -NoProfile -Command "Expand-Archive -Path '$1' -DestinationPath '$2' -Force"
+  fi
 }
 
 sai()  { echo "$*"; exit 0; }
