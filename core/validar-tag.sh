@@ -32,6 +32,7 @@ SHA=$(git rev-parse "$TAG^{commit}")
 # mesmo commit de uma hom.* "Release|Hotfix <versão>" com regressao-ok
 HOM=""; ACHOU_TITULO=nao
 for H in $(git tag --points-at "$SHA" -l 'hom.*'); do
+  [ "$(git cat-file -t "refs/tags/$H")" = tag ] || continue   # a hom.* também precisa ser anotada
   case "$(assunto "$H")" in "Release $VER"|"Hotfix $VER") ;; *) continue ;; esac
   ACHOU_TITULO=sim
   if tem "regressao-ok/$H"; then HOM=$H; break; fi
@@ -40,7 +41,8 @@ done
 [ -n "$HOM" ] || recusa "a hom.* deste commit não tem regressao-ok."
 
 # contém a main e a versão em PRD (P9)
-git merge-base --is-ancestor origin/main "$SHA" 2> /dev/null || recusa "P9: o commit de $TAG não contém a main atual."
+git rev-parse -q --verify refs/remotes/origin/main > /dev/null || recusa "P9: a ref origin/main não existe; busque (fetch) antes de validar."
+git merge-base --is-ancestor origin/main "$SHA" || recusa "P9: o commit de $TAG não contém a main atual."
 ATUAL=$(deploy_ultimo_ok prd) || recusa "P9: não foi possível consultar o deployment de PRD."
 if [ -n "$ATUAL" ]; then
   git rev-parse -q --verify "refs/tags/$ATUAL^{commit}" > /dev/null || recusa "P9: a versão de PRD $ATUAL não existe como tag."
@@ -48,7 +50,9 @@ if [ -n "$ATUAL" ]; then
 fi
 
 # todas as entregas do manifesto: última do MR, homologada, sem nok/retirada
-manifesto_de "$HOM" | awk '$1 ~ /^rc\// {print $1}' | while read -r RC; do
+MANIF=$(manifesto_de "$HOM") || recusa "não foi possível ler o manifesto de $HOM."
+# manifesto sem entregas é uma release vazia legítima
+printf '%s\n' "$MANIF" | awk '$1 ~ /^rc\// {print $1}' | while read -r RC; do
   ID=${RC#rc/}; ID=${ID%.*}
   [ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do MR (existe $(ultima_rc "$ID"))."
   [ "$(estado "$RC")" = hom-ok ] || recusa "$RC não está homologada (estado: $(estado "$RC"))."

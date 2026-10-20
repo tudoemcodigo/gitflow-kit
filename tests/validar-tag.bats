@@ -154,3 +154,33 @@ valida() { rodar validar-tag.sh "$@"; }
   valida qa.nada xyz
   assert_failure
 }
+
+@test "prd sem a ref origin/main recusa com mensagem propria" {
+  entrega ABC-1 qa-ok hom-ok
+  montar_hom "Release 1.1.0" hom.2026-01-01.1 rc/ABC-1.1
+  git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m ok
+  git -C "$WORK" tag -a v1.1.0 -m v1.1.0
+  git -C "$WORK" update-ref -d refs/remotes/origin/main
+  valida v1.1.0 prd
+  assert_failure
+  assert_output --partial "origin/main não existe"
+}
+
+@test "prd com hom.* leve no commit recusa" {
+  entrega ABC-1 qa-ok hom-ok
+  montar_hom "Release 1.1.0" hom.2026-01-01.1 rc/ABC-1.1
+  git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m ok
+  git -C "$WORK" tag -a v1.1.0 -m v1.1.0
+  git -C "$WORK" tag -d hom.2026-01-01.1 > /dev/null
+  git -C "$WORK" tag hom.2026-01-01.1 v1.1.0^{commit}
+  valida v1.1.0 prd
+  assert_failure
+}
+
+@test "prd com release vazia (manifesto sem entregas) passa" {
+  montar_hom "Release 1.1.0" hom.2026-01-01.1
+  git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m ok
+  git -C "$WORK" tag -a v1.1.0 -m v1.1.0
+  valida v1.1.0 prd
+  assert_success
+}

@@ -105,3 +105,51 @@ pacote() {
   assert_success
   assert_output '[alerta] texto $(x) "q"'
 }
+
+@test "zip via PowerShell forcado: cria e extrai, com espacos no caminho" {
+  command -v powershell.exe > /dev/null 2>&1 || skip "powershell.exe ausente"
+  . "$KIT_DIR/core/lib.sh"
+  export GITFLOW_ZIP_FORCAR=powershell
+  mkdir -p "$BATS_TEST_TMPDIR/com espaco/dist/sub" "$BATS_TEST_TMPDIR/out dir"
+  echo ola > "$BATS_TEST_TMPDIR/com espaco/dist/index.html"
+  echo dado > "$BATS_TEST_TMPDIR/com espaco/dist/sub/a.txt"
+  zip_criar "$BATS_TEST_TMPDIR/com espaco/dist" "$BATS_TEST_TMPDIR/out dir/x.zip"
+  [ -f "$BATS_TEST_TMPDIR/out dir/x.zip" ]
+  mkdir "$BATS_TEST_TMPDIR/ext ract"
+  zip_extrair "$BATS_TEST_TMPDIR/out dir/x.zip" "$BATS_TEST_TMPDIR/ext ract"
+  [ "$(cat "$BATS_TEST_TMPDIR/ext ract/index.html")" = ola ]
+  [ "$(cat "$BATS_TEST_TMPDIR/ext ract/sub/a.txt")" = dado ]
+}
+
+@test "deploy recusa ambiente vazio ou desconhecido sem apagar nada" {
+  pacote build "$SHA"
+  . "$KIT_DIR/core/lib.sh"
+  carregar_config
+  mkdir -p "$DEPLOY_DIR/qa"
+  echo fica > "$DEPLOY_DIR/qa/x.txt"
+  ! deploy_instalar "" "$SHA" v1 "$GITFLOW_SAIDA/app-$SHA.zip" || false
+  ! deploy_instalar ../qa "$SHA" v1 "$GITFLOW_SAIDA/app-$SHA.zip" || false
+  ! deploy_saude "" || false
+  [ -f "$DEPLOY_DIR/qa/x.txt" ]
+}
+
+@test "publicar recusa quando o .sha256 local nao bate com o zip" {
+  pacote build "$SHA"
+  echo "1111111111111111111111111111111111111111111111111111111111111111  app-$SHA.zip" > "$GITFLOW_SAIDA/app-$SHA.zip.sha256"
+  pacote publicar "$SHA"
+  assert_failure
+  assert_output --partial "diverge"
+  [ ! -e "$ARTEFATOS_DIR/app-$SHA.zip" ]
+  [ ! -e "$ARTEFATOS_DIR/app-$SHA.zip.sha256" ]
+}
+
+@test "publicar nao deixa temporarios e baixar para arquivo confere o hash" {
+  pacote build "$SHA"
+  pacote publicar "$SHA"
+  [ -z "$(ls -A "$ARTEFATOS_DIR" | grep '^\.pub')" ]
+  . "$KIT_DIR/core/lib.sh"
+  carregar_config
+  artefatos_baixar "$SHA" "$BATS_TEST_TMPDIR/copia.zip"
+  cmp "$GITFLOW_SAIDA/app-$SHA.zip" "$BATS_TEST_TMPDIR/copia.zip"
+  [ -z "$(ls "$BATS_TEST_TMPDIR" | grep baixando)" ]
+}

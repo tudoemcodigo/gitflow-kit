@@ -1,8 +1,13 @@
 #!/bin/sh
 # adapters/deploy/pasta.sh: "deploy" em pasta ($DEPLOY_DIR/<amb>/) com version.json.
 
+_deploy_amb() {   # só ambientes conhecidos: AMB vazio apagaria o DEPLOY_DIR inteiro
+  case "$1" in qa|hom|prd) ;; *) echo "ambiente inválido: '$1'" >&2; return 1 ;; esac
+}
+
 deploy_instalar() {   # AMB SHA VERSAO ZIP
   : "${DEPLOY_DIR:?DEPLOY_DIR não definido}"
+  _deploy_amb "$1" || return 1
   [ -f "$4" ] || { echo "zip não encontrado: $4" >&2; return 1; }
   mkdir -p "$DEPLOY_DIR"
   _novo=$(mktemp -d "$DEPLOY_DIR/.novo.XXXXXX") || return 1
@@ -16,5 +21,6 @@ deploy_instalar() {   # AMB SHA VERSAO ZIP
 
 deploy_saude() {   # AMB
   : "${DEPLOY_DIR:?DEPLOY_DIR não definido}"
+  _deploy_amb "$1" || return 1
   [ -f "$DEPLOY_DIR/$1/version.json" ]
 }

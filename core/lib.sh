@@ -51,8 +51,16 @@ carregar_config() {
   fi
 }
 
-# zip portátil: python3 (presente nos dois SOs do CI), senão zip/unzip, senão PowerShell (Windows)
-_py_zip() { python3 -c 'import zipfile' > /dev/null 2>&1; }
+# zip portátil: python3 (presente nos dois SOs do CI), senão zip/unzip, senão PowerShell (Windows).
+# GITFLOW_ZIP_FORCAR=powershell força o PowerShell (uso em testes).
+_py_zip() { [ "${GITFLOW_ZIP_FORCAR:-}" != powershell ] && python3 -c 'import zipfile' > /dev/null 2>&1; }
+_tem_zip() { [ "${GITFLOW_ZIP_FORCAR:-}" != powershell ] && command -v "$1" > /dev/null 2>&1; }
+# caminho nativo para o PowerShell (Git Bash: /c/... -> C:\...); sem cygpath, o próprio caminho
+_wpath() { if command -v cygpath > /dev/null 2>&1; then cygpath -w "$1"; else printf '%s\n' "$1"; fi; }
+# os caminhos vão por variáveis de ambiente (nunca dentro do texto do comando): sem injeção, espaços ok
+_ps() {   # ORIGEM DESTINO SCRIPT
+  GF_ORIGEM=$(_wpath "$1") GF_DESTINO=$(_wpath "$2") powershell.exe -NoProfile -NonInteractive -Command "$3"
+}
 zip_criar() {   # DIR ZIP: zipa o conteúdo de DIR (a raiz do zip é o conteúdo)
   if _py_zip; then
     python3 -I -c '
@@ -65,20 +73,22 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             p = os.path.join(r, f)
             z.write(p, os.path.relpath(p, src))
 ' "$1" "$2"
-  elif command -v zip > /dev/null 2>&1; then
+  elif _tem_zip zip; then
     _o=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
     (cd "$1" && zip -qr "$_o" .)
   else
-    powershell.exe -NoProfile -Command "Compress-Archive -Path '$1/*' -DestinationPath '$2' -Force"
+    # shellcheck disable=SC2016  # variáveis do PowerShell, não do shell
+    _ps "$1" "$2" '$ErrorActionPreference = "Stop"; Compress-Archive -Path (Join-Path $env:GF_ORIGEM "*") -DestinationPath $env:GF_DESTINO -Force'
   fi
 }
 zip_extrair() {   # ZIP DIR
   if _py_zip; then
     python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$1" "$2"
-  elif command -v unzip > /dev/null 2>&1; then
+  elif _tem_zip unzip; then
     unzip -q "$1" -d "$2"
   else
-    powershell.exe -NoProfile -Command "Expand-Archive -Path '$1' -DestinationPath '$2' -Force"
+    # shellcheck disable=SC2016  # variáveis do PowerShell, não do shell
+    _ps "$1" "$2" '$ErrorActionPreference = "Stop"; Expand-Archive -LiteralPath $env:GF_ORIGEM -DestinationPath $env:GF_DESTINO -Force'
   fi
 }
 
