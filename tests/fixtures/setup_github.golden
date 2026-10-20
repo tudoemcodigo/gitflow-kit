@@ -1,14 +1,14 @@
 GET /orgs/acme/teams/qa
 POST /orgs/acme/teams
+GET /orgs/acme/teams/qa/repos/acme/app
 PUT /orgs/acme/teams/qa/repos/acme/app
 GET /orgs/acme/teams/negocio
 POST /orgs/acme/teams
-PUT /orgs/acme/teams/negocio/repos/acme/app
 GET /orgs/acme/teams/tech-leads
 POST /orgs/acme/teams
-PUT /orgs/acme/teams/tech-leads/repos/acme/app
 GET /orgs/acme/teams/release-managers
 POST /orgs/acme/teams
+GET /orgs/acme/teams/release-managers/repos/acme/app
 PUT /orgs/acme/teams/release-managers/repos/acme/app
 PATCH /repos/acme/app
 GET /repos/acme/app/git/ref/heads/main
@@ -31,6 +31,7 @@ PUT /repos/acme/app/environments/production
 PUT /repos/acme/app/environments/checagem-qa
 PUT /repos/acme/app/environments/checagem-hom
 PUT /repos/acme/app/environments/aprovacao-prd
+GET /repos/acme/app/rulesets?per_page=100&includes_parents=false
 GET /repos/acme/app/contents/.github/pull_request_template.md
 PUT /repos/acme/app/contents/.github/pull_request_template.md
 GET /repos/acme/app/git/matching-refs/tags/v
@@ -55,7 +56,6 @@ POST /repos/acme/app/labels
 POST /repos/acme/app/labels
 POST /repos/acme/app/labels
 POST /repos/acme/app/labels
-GET /repos/acme/app/rulesets?per_page=100
 POST /repos/acme/app/rulesets
 POST /repos/acme/app/rulesets
 POST /repos/acme/app/rulesets

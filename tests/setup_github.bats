@@ -59,6 +59,7 @@ echo "$M $P" >> "$FAKE/log"
 [ -z "${B:-}" ] || cat > "$FAKE/body.$(printf "%s" "$M$P" | tr "/?=&" "____")"
 if [ "$M" = GET ]; then
   f="$FAKE/state/$(printf '%s' "$P" | tr '/?=&' '____')"
+  if [ -f "$f" ] && grep -q '^HTTP500' "$f"; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
   if [ -f "$f" ]; then cat "$f"; exit 0; fi
   echo "gh: Not Found (HTTP 404)" >&2
   exit 1
@@ -79,10 +80,12 @@ estado_existente() {
   for b in main qa hom meta/rerere gh-pages; do put "/repos/acme/app/git/ref/heads/$b" '{"object":{"sha":"abc"}}'; done
   put /repos/acme/app/git/matching-refs/tags/v '[{"ref":"refs/tags/v0.1.0"}]'
   put '/repos/acme/app/deployments?environment=production&per_page=1' '[{"id":3}]'
+  put /orgs/acme/teams/qa/repos/acme/app '{"role_name":"maintain"}'
+  put /orgs/acme/teams/release-managers/repos/acme/app '{"role_name":"admin"}'
   put /repos/acme/app/pages '{"url":"x"}'
   put /repos/acme/app/contents/.github/pull_request_template.md '{"sha":"s"}'
   put '/repos/acme/app/labels?per_page=100' "$(cut -f1 "$KIT_DIR/setup/modelos/labels.tsv" | jq -R '{name:.}' | jq -cs .)"
-  put '/repos/acme/app/rulesets?per_page=100' '[{"id":1,"name":"gitflow-ambientes"},{"id":2,"name":"gitflow-tags"},{"id":3,"name":"gitflow-versoes"}]'
+  put '/repos/acme/app/rulesets?per_page=100&includes_parents=false' '[{"id":1,"name":"gitflow-ambientes"},{"id":2,"name":"gitflow-tags"},{"id":3,"name":"gitflow-versoes"}]'
   put '/repos/acme/app/actions/secrets?per_page=100' '{"secrets":[{"name":"GITFLOW_APP_ID"},{"name":"GITFLOW_APP_KEY"}]}'
 }
 
@@ -141,4 +144,45 @@ estado_existente() {
   [ "$(jq -r '.reviewers | length' "$FAKE/body.PUT_repos_acme_app_environments_production")" = 0 ]
   [ "$(jq -r '.bypass_actors[0].actor_type' "$FAKE/body.PUT_repos_acme_app_rulesets_3")" = Integration ]
   [ "$(jq -r '.bypass_actors[1].actor_type' "$FAKE/body.PUT_repos_acme_app_rulesets_3")" = Team ]
+}
+
+@test "GET com erro 500 em matching-refs: aborta sem criar tag v0.1.0 nem deployment" {
+  fake_gh
+  estado_existente
+  printf 'HTTP500' > "$FAKE/state/_repos_acme_app_git_matching-refs_tags_v"
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -ne 0 ]
+  if grep -q '^POST /repos/acme/app/git/tags' "$FAKE/log"; then false; fi
+  if grep -q '^POST /repos/acme/app/deployments' "$FAKE/log"; then false; fi
+}
+
+@test "GET com erro 500 em deployments: aborta sem criar deployment" {
+  fake_gh
+  estado_existente
+  printf 'HTTP500' > "$FAKE/state/_repos_acme_app_deployments_environment_production_per_page_1"
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -ne 0 ]
+  if grep -q '^POST /repos/acme/app/deployments' "$FAKE/log"; then false; fi
+}
+
+@test "Teams: so qa e release-managers; nunca rebaixa acesso existente" {
+  fake_gh
+  estado_existente
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -eq 0 ]
+  if grep -q '^PUT /orgs/acme/teams/.*/repos/' "$FAKE/log"; then cat "$FAKE/log"; false; fi
+  rm "$FAKE/state/_orgs_acme_teams_qa_repos_acme_app" "$FAKE/log"
+  run SH --repo acme/app --app-id 12345
+  grep -q '^PUT /orgs/acme/teams/qa/repos/acme/app$' "$FAKE/log"
+  if grep -q 'teams/negocio/repos\|teams/tech-leads/repos' "$FAKE/log"; then false; fi
+}
+
+@test "tag mais nova por ordem de versao, nao de texto (v0.10.0 > v0.9.0)" {
+  fake_gh
+  estado_existente
+  printf '[{"ref":"refs/tags/v0.9.0"},{"ref":"refs/tags/v0.10.0"}]' > "$FAKE/state/_repos_acme_app_git_matching-refs_tags_v"
+  printf '[]' > "$FAKE/state/_repos_acme_app_deployments_environment_production_per_page_1"
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .ref "$FAKE/body.POST_repos_acme_app_deployments")" = v0.10.0 ]
 }

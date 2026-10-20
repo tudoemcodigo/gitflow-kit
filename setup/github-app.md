@@ -60,3 +60,6 @@ O script confere os secrets `GITFLOW_APP_ID`/`GITFLOW_APP_KEY` e avisa se faltar
 - Rulesets só protegem branches e tags: os locks `refs/gitflow/lock/*` podem ser apagados por quem tem escrita. O workflow `destravar` existe para recuperar o estado.
 - Environments com revisores obrigatórios em repositórios privados exigem plano GitHub Team/Enterprise.
 - Os Environments `qa`, `hom` e `production` não têm revisores e nenhum job os declara: só recebem os deployments criados pelo kit.
+- Os Environments (`qa`, `hom`, `production`, `checagem-*`, `aprovacao-prd`) e os rulesets `gitflow-ambientes`, `gitflow-tags` e `gitflow-versoes` são totalmente gerenciados pelo script: cada execução sobrescreve alterações manuais. Use outros nomes para personalizações.
+- O template de PR e a tag `v0.1.0` são escritos antes dos rulesets; se faltarem quando os rulesets já existem, a escrita é barrada a menos que quem roda esteja no bypass.
+- Leituras que falham com algo diferente de 404 (5xx, 401, 403) abortam o script; rode de novo depois de resolver.

@@ -16,6 +16,11 @@
 #   checagem-qa/-hom     revisores: Team qa, sem espera.
 #   aprovacao-prd        revisores: Team release-managers; prevent_self_review = nao --modo-demo.
 #
+# GERENCIAMENTO TOTAL: os Environments (qa, hom, production, checagem-*, aprovacao-prd) e os rulesets gitflow-ambientes,
+# gitflow-tags e gitflow-versoes sao totalmente gerenciados por este script: cada execucao sobrescreve (PUT) o que
+# foi alterado a mao. Personalizacoes devem usar outros nomes.
+# Falhas diferentes de HTTP 404 em leituras interrompem o script (nunca tratadas como "nao existe").
+#
 # LIMITACAO: rulesets so protegem branches e tags. Os locks do kit (refs/gitflow/lock/*) NAO podem ser protegidos
 # por ruleset: quem tem permissao de escrita pode apaga-los. Aceitavel: o workflow "destravar" existe para isso.
 set -eu
@@ -61,11 +66,28 @@ chamar() {
   if [ -n "$_b" ]; then
     printf '%s' "$_b" | gh api -X "$_m" "$_p" --input -
   elif [ "$_m" = GET ]; then
-    case $_p in *per_page=100*) gh api --paginate "$_p" 2> /dev/null; return ;; esac
-    gh api "$_p" 2> /dev/null
+    _pg=
+    case $_p in *per_page=100*) _pg=--paginate ;; esac
+    # shellcheck disable=SC2086  # _pg vazio ou uma unica opcao
+    if gh api $_pg "$_p" 2> "$ERRF"; then return 0; fi
+    # fail closed: so HTTP 404 e "nao existe"; qualquer outro erro (5xx, 401, 403, rede) interrompe
+    if grep -q 'HTTP 404' "$ERRF"; then return 1; fi
+    cat "$ERRF" >&2
+    return 3
   else
     gh api -X "$_m" "$_p"
   fi
+}
+
+ERRF=$(mktemp)
+trap 'rm -f "$ERRF"' EXIT
+
+# obter CAMINHO: GET fail-closed. 0 = existe (corpo em $out); 1 = 404 (nao existe); outro erro: aborta o script.
+obter() {
+  out=$(chamar GET "$1") && return 0
+  _rc=$?
+  [ "$_rc" -eq 1 ] && return 1
+  die "GET $1 falhou (nao e 404); abortando sem alterar nada alem do que ja foi feito"
 }
 
 enc() { printf '%s' "$1" | jq -sRr '@uri'; }
@@ -78,17 +100,30 @@ fi
 # ---------- Teams ----------
 TEAM_QA="" TEAM_RM=""
 for t in qa negocio tech-leads release-managers; do
-  if out=$(chamar GET "/orgs/$ORG/teams/$t"); then
+  if obter "/orgs/$ORG/teams/$t"; then
     info "team $t: ja existe"
   else
     out=$(chamar POST "/orgs/$ORG/teams" "$(jq -n --arg n "$t" '{name: $n, privacy: "closed"}')")
     info "team $t: criada"
   fi
   id=$(printf '%s' "$out" | jq -r '.id // empty' | head -n 1)
-  [ -n "$id" ] || id=1
+  if [ -z "$id" ]; then
+    [ "$DRY" = sim ] || die "nao consegui o id da Team $t"
+    id=1
+  fi
   [ "$t" = qa ] && TEAM_QA=$id
   [ "$t" = release-managers ] && TEAM_RM=$id
-  chamar PUT "/orgs/$ORG/teams/$t/repos/$REPO" '{"permission":"push"}' > /dev/null
+  # So as Teams revisoras (qa, release-managers) precisam de acesso ao repo para aprovar Environments.
+  # Nunca rebaixa: so concede `push` se a Team ainda nao tem nenhum acesso ao repositorio.
+  case $t in
+    qa | release-managers)
+      if obter "/orgs/$ORG/teams/$t/repos/$REPO" > /dev/null; then
+        info "team $t: ja tem acesso ao repo (mantido)"
+      else
+        chamar PUT "/orgs/$ORG/teams/$t/repos/$REPO" '{"permission":"push"}' > /dev/null
+        info "team $t: acesso push concedido ao repo"
+      fi ;;
+  esac
 done
 
 # ---------- Configuracao do repositorio ----------
@@ -97,14 +132,14 @@ chamar PATCH "$R" "$(jq -n '{allow_squash_merge: false, allow_rebase_merge: fals
 info "repo: squash/rebase desligados, merge commit ligado (o ruleset bloqueia a main para quem nao e o bot)"
 
 # ---------- Branches ----------
-if out=$(chamar GET "$R/git/ref/heads/main"); then
+if obter "$R/git/ref/heads/main"; then
   MAIN_SHA=$(printf '%s' "$out" | jq -r '.object.sha' | head -n 1)
 else
   [ "$DRY" = sim ] || die "branch main nao existe em $REPO"
   MAIN_SHA=$ZERO
 fi
 for b in qa hom meta/rerere; do
-  if chamar GET "$R/git/ref/heads/$b" > /dev/null; then
+  if obter "$R/git/ref/heads/$b" > /dev/null; then
     info "branch $b: ja existe"
   else
     chamar POST "$R/git/refs" "$(jq -n --arg r "refs/heads/$b" --arg s "$MAIN_SHA" '{ref: $r, sha: $s}')" > /dev/null
@@ -113,7 +148,7 @@ for b in qa hom meta/rerere; do
 done
 
 # ---------- gh-pages + Pages ----------
-if chamar GET "$R/git/ref/heads/gh-pages" > /dev/null; then
+if obter "$R/git/ref/heads/gh-pages" > /dev/null; then
   info "branch gh-pages: ja existe"
 else
   blob=$(chamar POST "$R/git/blobs" "$(jq -n '{content: "GitFlow Kit\n", encoding: "utf-8"}')" | jq -r .sha)
@@ -123,7 +158,7 @@ else
   info "branch gh-pages: criada (orfa)"
 fi
 PAGES=$(jq -n '{source: {branch: "gh-pages", path: "/"}}')
-if chamar GET "$R/pages" > /dev/null; then
+if obter "$R/pages" > /dev/null; then
   chamar PUT "$R/pages" "$PAGES" > /dev/null || info "AVISO: nao consegui atualizar o Pages"
 else
   chamar POST "$R/pages" "$PAGES" > /dev/null || info "AVISO: nao consegui habilitar o Pages (plano do repositorio?)"
@@ -153,9 +188,16 @@ if [ "$DEMO" = sim ]; then
   info "⚠️ MODO_DEMO: prevent_self_review=false em aprovacao-prd (quem abriu pode aprovar o proprio PRD)"
 fi
 
+# ---------- Rulesets existentes (lidos antes das escritas na main/tags) ----------
+RULESETS=""
+if obter "$R/rulesets?per_page=100&includes_parents=false"; then RULESETS=$out; fi
+if printf '%s' "$RULESETS" | jq -e 'any(.[]?; .name | startswith("gitflow-"))' > /dev/null 2>&1; then
+  info "AVISO: rulesets gitflow-* ja existem. O template de PR e a tag v0.1.0 so podem ser escritos antes deles; se faltarem, a escrita sera barrada (quem roda precisa estar no bypass)."
+fi
+
 # ---------- Template do PR ----------
 TPL=.github/pull_request_template.md
-if chamar GET "$R/contents/$TPL" > /dev/null; then
+if obter "$R/contents/$TPL" > /dev/null; then
   info "template de PR: ja existe"
 else
   chamar PUT "$R/contents/$TPL" "$(jq -n --arg c "$(base64 < "$KIT_SETUP/modelos/pull_request_template.md" | tr -d '\r\n')" \
@@ -165,8 +207,8 @@ fi
 
 # ---------- Estado inicial de PRD: tag v0.1.0 + deployment success ----------
 VTAG=
-if out=$(chamar GET "$R/git/matching-refs/tags/v") && [ "$(printf '%s' "$out" | jq 'length')" -gt 0 ]; then
-  VTAG=$(printf '%s' "$out" | jq -r '.[-1].ref' | sed 's|^refs/tags/||')
+if obter "$R/git/matching-refs/tags/v" && [ "$(printf '%s' "$out" | jq 'length')" -gt 0 ]; then
+  VTAG=$(printf '%s' "$out" | jq -r '[.[].ref | sub("^refs/tags/"; "")] | sort_by(sub("^v"; "") | split(".") | map(tonumber? // 0)) | last' | sed 's|^refs/tags/||')
   info "tag $VTAG: ja existe"
 else
   VTAG=v0.1.0
@@ -174,7 +216,7 @@ else
   chamar POST "$R/git/refs" "$(jq -n --arg s "$tg" '{ref: "refs/tags/v0.1.0", sha: $s}')" > /dev/null
   info "tag v0.1.0: criada (anotada) na main"
 fi
-if out=$(chamar GET "$R/deployments?environment=production&per_page=1") && [ "$(printf '%s' "$out" | jq 'length')" -gt 0 ]; then
+if obter "$R/deployments?environment=production&per_page=1" && [ "$(printf '%s' "$out" | jq 'length')" -gt 0 ]; then
   info "deployment de production: ja existe"
 else
   dep=$(chamar POST "$R/deployments" "$(jq -n --arg r "$VTAG" \
@@ -185,7 +227,7 @@ fi
 
 # ---------- Labels ----------
 existentes=
-if out=$(chamar GET "$R/labels?per_page=100"); then
+if obter "$R/labels?per_page=100"; then
   existentes=$(printf '%s' "$out" | jq -r '.[].name')
 fi
 TAB=$(printf '\t')
@@ -204,8 +246,6 @@ info "labels: sincronizadas"
 BYPASS_APP=$(jq -n --argjson i "$APP_ID" '[{actor_id: $i, actor_type: "Integration", bypass_mode: "always"}]')
 BYPASS_APP_RM=$(jq -n --argjson i "$APP_ID" --argjson t "$TEAM_RM" \
   '[{actor_id: $i, actor_type: "Integration", bypass_mode: "always"}, {actor_id: $t, actor_type: "Team", bypass_mode: "always"}]')
-RULESETS=
-if out=$(chamar GET "$R/rulesets?per_page=100"); then RULESETS=$out; fi
 
 # ruleset NOME TARGET REFS_JSON RULES_JSON BYPASS_JSON
 ruleset() {
