@@ -134,6 +134,50 @@ reutilizaveis() { ls "$WF"/gitflow-*.yml; }
   nao_tem_arq "$CH/app-ci.yml" 'secrets'
 }
 
+@test "voltar e destravar usam os grupos configuraveis, nao slugs fixos" {
+  for n in voltar destravar; do
+    grep -q 'exige-membro.sh" @GRUPO_TL @GRUPO_RM' "$WF/gitflow-$n.yml"
+    nao_tem_arq "$WF/gitflow-$n.yml" 'exige-membro.sh" tech-leads'
+  done
+}
+
+@test "NOTIFICAR_WEBHOOK: secret opcional declarado e repassado aos passos do core que notificam" {
+  for f in $(reutilizaveis); do
+    awk '/^    secrets:/ {s = 1} s && /NOTIFICAR_WEBHOOK:/ {getline n; if (n ~ /required: false/) ok = 1} END {exit !ok}' "$f"
+  done
+  for par in montar:Montar release:'Criar a release' promover-hotfix:Promover voltar:Voltar regressao:'Registrar a regressao' comandos:'Executar o comando'; do
+    f="$WF/gitflow-${par%%:*}.yml"
+    awk -v n="      - name: ${par#*:}" '$0 == n {d = 1; next} d && /^      - / {exit} d && /NOTIFICAR_WEBHOOK: \$\{\{ secrets.NOTIFICAR_WEBHOOK \}\}/ {ok = 1} END {exit !ok}' "$f"
+  done
+  for n in Preparar 'Publicar pacote' Implantar Registrar 'Desfazer (ou alertar)'; do
+    awk -v n="      - name: $n" '$0 == n {d = 1; next} d && /^      - / {exit} d && /NOTIFICAR_WEBHOOK: \$\{\{ secrets.NOTIFICAR_WEBHOOK \}\}/ {ok = 1} END {exit !ok}' "$WF/gitflow-esteira.yml"
+  done
+  # chamadas aninhadas repassam o secret; nunca em passos que rodam codigo da aplicacao
+  for n in montar release promover-hotfix; do
+    grep -q 'NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}' "$WF/gitflow-$n.yml"
+  done
+  for j in construir testar gates verificar; do
+    nao_tem "$(job_bloco "$WF/gitflow-esteira.yml" $j)" 'NOTIFICAR_WEBHOOK'
+  done
+  grep -q 'secrets: inherit' "$CH/gitflow.yml"
+}
+
+@test "PULAR_CHECAGEM so existe na esteira (montar, release e promover-hotfix nao o aceitam)" {
+  for n in montar release promover-hotfix; do
+    nao_tem_arq "$WF/gitflow-$n.yml" 'PULAR_CHECAGEM'
+  done
+  grep -q 'PULAR_CHECAGEM' "$WF/gitflow-esteira.yml"
+  for j in montar release promover-hotfix; do
+    nao_tem "$(job_bloco "$CH/gitflow.yml" $j)" 'PULAR_CHECAGEM'
+  done
+  job_bloco "$CH/gitflow.yml" esteira | grep -q 'PULAR_CHECAGEM'
+}
+
+@test "descricao do FORCAR no chamador diz o que o codigo faz" {
+  grep -q 'ignora o modo release/hotfix (P6/P7)' "$CH/gitflow.yml"
+  nao_tem_arq "$CH/gitflow.yml" 'nada-novo'
+}
+
 @test "nada da empresa nos arquivos do kit" {
   # termos vem do ambiente (virgula ou espaco), nunca literais no repo
   if [ -z "${GITFLOW_TERMOS_PROIBIDOS:-}" ]; then

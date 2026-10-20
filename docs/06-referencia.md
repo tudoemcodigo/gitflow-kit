@@ -54,19 +54,19 @@ Arquivo `.github/workflows/gitflow.yml` (modelo em `ci/github-actions/chamadores
 
 | `job` | Inputs usados | Chama | Quem (conferido pelo script) |
 |---|---|---|---|
-| `montar` | `ALVO` (`qa`, `hom`, `release`, `hotfix`), `VERSAO`, `HOTFIX`, `EXPRESSO`, `FORCAR`, `PULAR_CHECAGEM` | `gitflow-montar` | `release`/`hotfix`: `GRUPO_RM` |
+| `montar` | `ALVO` (`qa`, `hom`, `release`, `hotfix`), `VERSAO`, `HOTFIX`, `EXPRESSO`, `FORCAR` | `gitflow-montar` | `release`/`hotfix`: `GRUPO_RM` |
 | `esteira` | `TAG`, `AMBIENTE` (`qa`, `hom`, `prd`), `PULAR_CHECAGEM` | `gitflow-esteira` | — (PRD passa por `aprovacao-prd`) |
 | `regressao` | `HOM_TAG`, `RESULTADO` (`ok`, `falhou`), `ISSUE` | `gitflow-regressao` | `GRUPO_QA` |
-| `release` | `VERSAO`, `HOM_TAG`, `ISSUE`, `PULAR_CHECAGEM` | `gitflow-release` | `GRUPO_RM` |
-| `promover-hotfix` | `QA_TAG`, `PULAR_CHECAGEM` | `gitflow-promover-hotfix` | `GRUPO_RM` |
-| `voltar` | `AMBIENTE` | `gitflow-voltar` | `tech-leads` ou `release-managers` |
-| `destravar` | `NOME` | `gitflow-destravar` | `tech-leads` ou `release-managers` |
+| `release` | `VERSAO`, `HOM_TAG`, `ISSUE` | `gitflow-release` | `GRUPO_RM` |
+| `promover-hotfix` | `QA_TAG` | `gitflow-promover-hotfix` | `GRUPO_RM` |
+| `voltar` | `AMBIENTE` | `gitflow-voltar` | `GRUPO_TL` ou `GRUPO_RM` |
+| `destravar` | `NOME` | `gitflow-destravar` | `GRUPO_TL` ou `GRUPO_RM` |
 
 | Input | Tipo | Observação |
 |---|---|---|
 | `EXPRESSO` | boolean | só entram (além das já em teste) entregas de peso 1 (reteste expresso) |
 | `FORCAR` | boolean | desliga as guardas P6 (modo release) e P7 (modo hotfix); **não** ignora "nada mudou" |
-| `PULAR_CHECAGEM` | boolean | só aceito quando `TAG` é a build já publicada no ambiente (R7); numa montagem, que sempre cria tag nova, faz a esteira parar no `preparar`; em PRD é sempre recusado |
+| `PULAR_CHECAGEM` | boolean | só existe em `job=esteira`: aceito quando `TAG` é a build já publicada no ambiente (R7); em PRD é sempre recusado. Montagem, release e promover-hotfix não têm o input (sempre criam tag nova) |
 
 ---
 
@@ -78,11 +78,11 @@ Todos em `.github/workflows/`, `on: workflow_call`, com inputs `kit-repo` (padr�
 | Workflow | Inputs próprios | Jobs |
 |---|---|---|
 | `gitflow-comandos` | — | `comandos` |
-| `gitflow-montar` | `ALVO`, `VERSAO`, `HOTFIX`, `EXPRESSO`, `FORCAR`, `PULAR_CHECAGEM`, `montar-workflow` | `montar` → `esteira` (se criou tag) |
+| `gitflow-montar` | `ALVO`, `VERSAO`, `HOTFIX`, `EXPRESSO`, `FORCAR`, `montar-workflow` | `montar` → `esteira` (se criou tag) |
 | `gitflow-esteira` | `TAG`, `AMBIENTE`, `PULAR_CHECAGEM`, `GITFLOW_LOCK_MONTAGEM`, `montar-workflow` | `preparar`, `construir`, `testar`, `publicar-pacote`, `gates`, `aprovacao`, `implantar`, `verificar`, `checagem`, `registrar`, `falhou` |
 | `gitflow-regressao` | `HOM_TAG`, `RESULTADO`, `ISSUE` | `regressao` |
-| `gitflow-release` | `VERSAO`, `HOM_TAG`, `ISSUE`, `PULAR_CHECAGEM`, `montar-workflow` | `release` → `esteira` (`AMBIENTE=prd`) |
-| `gitflow-promover-hotfix` | `QA_TAG`, `PULAR_CHECAGEM`, `montar-workflow` | `promover` → `esteira` (`AMBIENTE=hom`) |
+| `gitflow-release` | `VERSAO`, `HOM_TAG`, `ISSUE`, `montar-workflow` | `release` → `esteira` (`AMBIENTE=prd`) |
+| `gitflow-promover-hotfix` | `QA_TAG`, `montar-workflow` | `promover` → `esteira` (`AMBIENTE=hom`) |
 | `gitflow-voltar` | `AMBIENTE` | `voltar` |
 | `gitflow-destravar` | `NOME` | `destravar` |
 
@@ -187,7 +187,7 @@ Nomes de lock: `comandos`, `montagem-qa`, `montagem-hom`, `ambiente-qa`, `ambien
 | `PAGES_REMOTE`, `PAGES_TENTATIVAS` (10), `PAGES_INTERVALO` (15), `PAGES_PUSH_TENTATIVAS` (3), `PAGES_CURL_TIMEOUT` (20), `SAUDE_SHA` | `deploy/pages.sh` | `PAGES_REMOTE` só pelo ambiente |
 | `ARTEFATOS_RELEASE_TAG` (`pacotes`), `ARTEFATOS_DIR` | adaptadores de artefatos | `ARTEFATOS_DIR` só pelo ambiente |
 | `DEPLOY_DIR` | `deploy/pasta.sh` | só pelo ambiente |
-| `NOTIFICAR_WEBHOOK`, `NOTIFICAR_ISSUE` | notificação | webhook só pelo ambiente |
+| `NOTIFICAR_WEBHOOK`, `NOTIFICAR_ISSUE` | notificação | webhook só pelo ambiente: secret opcional `NOTIFICAR_WEBHOOK` (`required: false` nos workflows; o chamador usa `secrets: inherit`), repassado só aos passos do core que notificam, nunca aos que rodam código da aplicação |
 | `MONTAR_WORKFLOW`, `MONTAR_REF` | `disparar-montar.sh` | input `montar-workflow`; branch padrão |
 | `R_CHEC`, `R_REG` | `falhou.sh` | resultado dos jobs `checagem` e `registrar` |
 | `GITFLOW_ZIP_FORCAR` | `lib.sh` | `powershell` força o zip via PowerShell (testes) |

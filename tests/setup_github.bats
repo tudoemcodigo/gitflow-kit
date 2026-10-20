@@ -38,7 +38,7 @@ SH() { sh "$KIT_DIR/setup/github.sh" "$@"; }
 # --- gh falso: grava "METODO caminho" e responde GET a partir de $FAKE/state/<caminho com / -> _> ---
 fake_gh() {
   FAKE="$BATS_TEST_TMPDIR/fake"
-  mkdir -p "$FAKE/bin" "$FAKE/state"
+  mkdir -p "$FAKE/bin" "$FAKE/state" "$FAKE/falha"
   cat > "$FAKE/bin/gh" <<'GH'
 #!/bin/sh
 [ "$1" = api ] || exit 2
@@ -55,6 +55,8 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+case $P in /*) echo "$M $P" >> "$FAKE/barra"; P=${P#/} ;; esac
+P=/$P
 echo "$M $P" >> "$FAKE/log"
 [ -z "${B:-}" ] || cat > "$FAKE/body.$(printf "%s" "$M$P" | tr "/?=&" "____")"
 if [ "$M" = GET ]; then
@@ -64,6 +66,8 @@ if [ "$M" = GET ]; then
   echo "gh: Not Found (HTTP 404)" >&2
   exit 1
 fi
+f="$FAKE/falha/$(printf '%s' "$M$P" | tr '/?=&' '____')"
+if [ -f "$f" ]; then cat "$f" >&2; exit 1; fi
 echo '{"id":7,"sha":"abc","object":{"sha":"abc"}}'
 GH
   chmod +x "$FAKE/bin/gh"
@@ -76,6 +80,8 @@ estado_existente() {
   S="$FAKE/state"
   put() { printf '%s' "$2" > "$S/$(printf '%s' "$1" | tr '/?=&' '____')"; }
   put /repos/acme/app '{"default_branch":"main"}'
+  put '/orgs/acme/installations?per_page=100' '{"total_count":1,"installations":[{"id":5,"app_id":12345,"app_slug":"meu-bot","repository_selection":"all"}]}'
+  put /orgs/acme/teams/tech-leads/repos/acme/app '{"role_name":"push"}'
   for t in qa negocio tech-leads release-managers; do put "/orgs/acme/teams/$t" '{"id":9}'; done
   for b in main qa hom meta/rerere gh-pages; do put "/repos/acme/app/git/ref/heads/$b" '{"object":{"sha":"abc"}}'; done
   put /repos/acme/app/git/matching-refs/tags/v '[{"ref":"refs/tags/v0.1.0"}]'
@@ -93,6 +99,7 @@ estado_existente() {
   fake_gh
   put() { printf '%s' "$2" > "$FAKE/state/$(printf '%s' "$1" | tr '/?=&' '____')"; }
   put /repos/acme/app '{"default_branch":"main"}'
+  put '/orgs/acme/installations?per_page=100' '{"installations":[{"app_id":12345,"app_slug":"meu-bot","repository_selection":"all"}]}'
   put /repos/acme/app/git/ref/heads/main '{"object":{"sha":"abc"}}'
   run SH --repo acme/app --app-id 12345
   [ "$status" -eq 0 ] || { echo "$output"; false; }
@@ -165,16 +172,83 @@ estado_existente() {
   if grep -q '^POST /repos/acme/app/deployments' "$FAKE/log"; then false; fi
 }
 
-@test "Teams: so qa e release-managers; nunca rebaixa acesso existente" {
+@test "Teams: qa, tech-leads e release-managers recebem push; negocio nao; nunca rebaixa acesso existente" {
   fake_gh
   estado_existente
   run SH --repo acme/app --app-id 12345
   [ "$status" -eq 0 ]
   if grep -q '^PUT /orgs/acme/teams/.*/repos/' "$FAKE/log"; then cat "$FAKE/log"; false; fi
-  rm "$FAKE/state/_orgs_acme_teams_qa_repos_acme_app" "$FAKE/log"
+  rm "$FAKE/state/_orgs_acme_teams_qa_repos_acme_app" "$FAKE/state/_orgs_acme_teams_tech-leads_repos_acme_app" "$FAKE/log"
   run SH --repo acme/app --app-id 12345
   grep -q '^PUT /orgs/acme/teams/qa/repos/acme/app$' "$FAKE/log"
-  if grep -q 'teams/negocio/repos\|teams/tech-leads/repos' "$FAKE/log"; then false; fi
+  grep -q '^PUT /orgs/acme/teams/tech-leads/repos/acme/app$' "$FAKE/log"
+  [ "$(jq -r .permission "$FAKE/body.PUT_orgs_acme_teams_tech-leads_repos_acme_app")" = push ]
+  if grep -q 'teams/negocio/repos' "$FAKE/log"; then false; fi
+}
+
+@test "--grupo-*: Teams, revisores e bypass usam os slugs informados" {
+  fake_gh
+  estado_existente
+  S="$FAKE/state"
+  for t in meu-qa meu-neg meus-tls meus-rms; do printf '{"id":9}' > "$S/_orgs_acme_teams_$t"; done
+  printf '{"role_name":"push"}' > "$S/_orgs_acme_teams_meu-qa_repos_acme_app"
+  printf '{"role_name":"push"}' > "$S/_orgs_acme_teams_meus-tls_repos_acme_app"
+  printf '{"role_name":"push"}' > "$S/_orgs_acme_teams_meus-rms_repos_acme_app"
+  run SH --repo acme/app --app-id 12345 --grupo-qa meu-qa --grupo-negocio meu-neg --grupo-tl meus-tls --grupo-rm meus-rms
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -q '^GET /orgs/acme/teams/meus-rms$' "$FAKE/log"
+  grep -q '^GET /orgs/acme/teams/meus-tls/repos/acme/app$' "$FAKE/log"
+  if grep -q 'teams/tech-leads$\|teams/release-managers$' "$FAKE/log"; then cat "$FAKE/log"; false; fi
+  run SH --repo acme/app --app-id 12345 --grupo-tl 'Tech Leads'
+  [ "$status" -ne 0 ]
+}
+
+@test "gh api sempre sem barra inicial (Git Bash converteria o caminho)" {
+  fake_gh
+  estado_existente
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -eq 0 ]
+  [ -s "$FAKE/log" ]
+  [ ! -e "$FAKE/barra" ] || { cat "$FAKE/barra"; false; }
+}
+
+@test "App nao instalado na organizacao: para antes de qualquer escrita, com a mensagem de instalacao" {
+  fake_gh
+  estado_existente
+  printf '{"installations":[{"app_id":999,"app_slug":"outro","repository_selection":"all"}]}' > "$FAKE/state/_orgs_acme_installations_per_page_100"
+  run SH --repo acme/app --app-id 12345 --app-slug meu-bot
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"o GitHub App (id 12345) não está instalado em acme/app: instale em https://github.com/apps/meu-bot/installations/new e rode o setup de novo"* ]]
+  if grep -Eq '^(POST|PUT|PATCH|DELETE) ' "$FAKE/log"; then cat "$FAKE/log"; false; fi
+}
+
+@test "ruleset 422 'must be part of the ruleset source' vira a mensagem de instalacao (slug da API)" {
+  fake_gh
+  estado_existente
+  printf '[]' > "$FAKE/state/_repos_acme_app_rulesets_per_page_100_includes_parents_false"
+  printf 'gh: Validation Failed (HTTP 422)
+Actor must be part of the ruleset source or owner organization
+' > "$FAKE/falha/POST_repos_acme_app_rulesets"
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"o GitHub App (id 12345) não está instalado em acme/app: instale em https://github.com/apps/meu-bot/installations/new"* ]]
+}
+
+@test "Pages: HTTP 409 no POST e sucesso (ja habilitado)" {
+  fake_gh
+  estado_existente
+  rm "$FAKE/state/_repos_acme_app_pages"
+  printf 'gh: Conflict (HTTP 409)
+A GitHub Pages site already exists.
+' > "$FAKE/falha/POST_repos_acme_app_pages"
+  run SH --repo acme/app --app-id 12345
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  [[ "$output" == *"Pages: já habilitado"* ]]
+  [[ "$output" != *"AVISO: nao consegui habilitar o Pages"* ]]
+  printf 'gh: Server Error (HTTP 500)
+' > "$FAKE/falha/POST_repos_acme_app_pages"
+  run SH --repo acme/app --app-id 12345
+  [[ "$output" == *"AVISO: nao consegui habilitar o Pages"* ]]
 }
 
 @test "tag mais nova por ordem de versao, nao de texto (v0.10.0 > v0.9.0)" {

@@ -86,7 +86,7 @@ Instalação completa, do zero, em [docs/04-instalacao-github.md](docs/04-instal
 | Jenkins | **em desenvolvimento**: `instalar.sh --plataforma jenkins` responde "ainda não disponível" |
 | Deploy | `pages` (GitHub Pages) e `pasta`; deploy em IIS ainda não implementado |
 | Artefatos | `github-release` (assets da Release `pacotes`) e `pasta` |
-| Notificação | `console`, `pr-comment`; `slack`/`teams` existem, mas os workflows do GitHub ainda não repassam o secret `NOTIFICAR_WEBHOOK` |
+| Notificação | `console`, `pr-comment`, `slack`, `teams` (os dois últimos leem o secret opcional `NOTIFICAR_WEBHOOK`, repassado pelos workflows com `secrets: inherit`) |
 
 Outras limitações conhecidas (locks não protegidos por ruleset, horários fixos no chamador, etc.) estão em
 [docs/05](docs/05-arquitetura-e-portabilidade.md#limitações-conhecidas).

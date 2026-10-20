@@ -12,9 +12,6 @@ on:
       ISSUE:
         type: string
         required: true
-      PULAR_CHECAGEM:
-        type: boolean
-        default: false
       montar-workflow:
         type: string
         default: gitflow.yml
@@ -29,6 +26,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -61,6 +60,8 @@ jobs:
           app-id: ${{ secrets.GITFLOW_APP_ID }}
           app-key: ${{ secrets.GITFLOW_APP_KEY }}
       - name: Criar a release
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/criar-release.sh" "$VERSAO" "$HOM_TAG" "$ISSUE"
       - name: Saida
@@ -73,10 +74,10 @@ jobs:
     with:
       TAG: ${{ needs.release.outputs.tag }}
       AMBIENTE: prd
-      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
       montar-workflow: ${{ inputs.montar-workflow }}
       kit-repo: ${{ inputs.kit-repo }}
       kit-ref: ${{ inputs.kit-ref }}
     secrets:
       GITFLOW_APP_ID: ${{ secrets.GITFLOW_APP_ID }}
       GITFLOW_APP_KEY: ${{ secrets.GITFLOW_APP_KEY }}
+      NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}

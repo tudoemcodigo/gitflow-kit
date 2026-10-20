@@ -24,6 +24,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -54,5 +56,7 @@ jobs:
           app-id: ${{ secrets.GITFLOW_APP_ID }}
           app-key: ${{ secrets.GITFLOW_APP_KEY }}
       - name: Registrar a regressao
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/regressao.sh" "$HOM_TAG" "$RESULTADO" "$ISSUE"

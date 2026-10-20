@@ -2,12 +2,19 @@
 # shellcheck disable=SC2016  # $var dentro de filtros jq nao e expansao de shell
 # Configura um repositorio GitHub (e as Teams da organizacao) para o GitFlow Kit. Idempotente.
 #
-# Uso: setup/github.sh --repo ORG/REPO --app-id ID [--dry-run] [--modo-demo]
-#   --app-id     id da integracao (GitHub App) do bot; vira ator de bypass dos rulesets (Integration, always)
+# Uso: setup/github.sh --repo ORG/REPO --app-id ID [--app-slug SLUG] [--grupo-qa S] [--grupo-negocio S]
+#                       [--grupo-tl S] [--grupo-rm S] [--dry-run] [--modo-demo]
+#   --app-id     id da integracao (GitHub App) do bot; vira ator de bypass dos rulesets (Integration, always).
+#                O App precisa estar instalado no repositorio (verificado antes de qualquer escrita).
+#   --app-slug   slug do App (so para a mensagem de instalacao); padrao: o app_slug da API de instalacoes
+#   --grupo-*    slugs das Teams (padroes: qa, negocio, tech-leads, release-managers); os mesmos valores devem
+#                estar em GRUPO_QA/GRUPO_NEGOCIO/GRUPO_TL/GRUPO_RM do .gitflow.env quando forem diferentes
 #   --dry-run    imprime "METODO caminho" de cada chamada, em ordem fixa, sem executar nada
 #   --modo-demo  prevent_self_review=false no Environment aprovacao-prd (revisor pode ser o autor)
 #
-# Requer `gh` autenticado como admin do repositorio e da organizacao. Todas as chamadas: `gh api`.
+# Requer `gh` autenticado como admin do repositorio e da organizacao (escopo admin:org para listar as instalacoes
+# do App). Todas as chamadas: `gh api`, com endpoints SEM barra inicial (o Git Bash do Windows converteria
+# "/repos/..." em caminho de arquivo).
 #
 # Environments:
 #   qa, hom, production  sem revisores: so recebem os deployments criados pela API do kit. Nenhum job declara
@@ -15,6 +22,10 @@
 #                        de PRD = ultimo deployment success em production).
 #   checagem-qa/-hom     revisores: Team qa, sem espera.
 #   aprovacao-prd        revisores: Team release-managers; prevent_self_review = nao --modo-demo.
+#
+# Acesso das Teams ao repositorio: `push` para qa, tech-leads e release-managers (revisoras de Environments e
+# dispatch de voltar/destravar), sem nunca rebaixar acesso existente. `negocio` nao recebe acesso: em repositorio
+# publico comentar so exige leitura; em repositorio privado de a permissao `pull` a ela a mao.
 #
 # GERENCIAMENTO TOTAL: os Environments (qa, hom, production, checagem-*, aprovacao-prd) e os rulesets gitflow-ambientes,
 # gitflow-tags e gitflow-versoes sao totalmente gerenciados por este script: cada execucao sobrescreve (PUT) o que
@@ -26,6 +37,7 @@
 set -eu
 
 export TZ=America/Sao_Paulo
+export MSYS_NO_PATHCONV=1   # Git Bash: nao converter argumentos que parecem caminhos
 KIT_SETUP=$(cd "$(dirname "$0")" && pwd)
 ZERO=0000000000000000000000000000000000000000
 
@@ -33,11 +45,17 @@ jq() { command jq -b "$@"; }
 info() { printf '%s\n' "$*" >&2; }
 die() { printf 'erro: %s\n' "$*" >&2; exit 2; }
 
-REPO="" APP_ID="" DRY=nao DEMO=nao
+REPO="" APP_ID="" APP_SLUG="" DRY=nao DEMO=nao
+G_QA=qa G_NEGOCIO=negocio G_TL=tech-leads G_RM=release-managers
 while [ $# -gt 0 ]; do
   case $1 in
     --repo) [ $# -ge 2 ] || die "--repo exige valor"; REPO=$2; shift ;;
     --app-id) [ $# -ge 2 ] || die "--app-id exige valor"; APP_ID=$2; shift ;;
+    --app-slug) [ $# -ge 2 ] || die "--app-slug exige valor"; APP_SLUG=$2; shift ;;
+    --grupo-qa) [ $# -ge 2 ] || die "--grupo-qa exige valor"; G_QA=$2; shift ;;
+    --grupo-negocio) [ $# -ge 2 ] || die "--grupo-negocio exige valor"; G_NEGOCIO=$2; shift ;;
+    --grupo-tl) [ $# -ge 2 ] || die "--grupo-tl exige valor"; G_TL=$2; shift ;;
+    --grupo-rm) [ $# -ge 2 ] || die "--grupo-rm exige valor"; G_RM=$2; shift ;;
     --dry-run) DRY=sim ;;
     --modo-demo) DEMO=sim ;;
     *) die "argumento desconhecido: $1" ;;
@@ -46,6 +64,10 @@ while [ $# -gt 0 ]; do
 done
 case $REPO in */*/* | /* | */ | '') die "use --repo ORG/REPO" ;; */*) ;; *) die "use --repo ORG/REPO" ;; esac
 case $APP_ID in '' | *[!0-9]*) die "use --app-id <id numerico da integracao>" ;; esac
+for _g in "$G_QA" "$G_NEGOCIO" "$G_TL" "$G_RM"; do
+  case $_g in '' | *[!a-z0-9-]*) die "slug de Team invalido: '$_g' (use letras minusculas, digitos e hifen)" ;; esac
+done
+case $APP_SLUG in *[!A-Za-z0-9-]*) die "--app-slug invalido: '$APP_SLUG'" ;; esac
 ORG=${REPO%%/*}
 R="/repos/$REPO"
 
@@ -64,23 +86,23 @@ chamar() {
     return 0
   fi
   if [ -n "$_b" ]; then
-    printf '%s' "$_b" | gh api -X "$_m" "$_p" --input -
+    printf '%s' "$_b" | gh api -X "$_m" "${_p#/}" --input -
   elif [ "$_m" = GET ]; then
     _pg=
     case $_p in *per_page=100*) _pg=--paginate ;; esac
     # shellcheck disable=SC2086  # _pg vazio ou uma unica opcao
-    if gh api $_pg "$_p" 2> "$ERRF"; then return 0; fi
+    if gh api $_pg "${_p#/}" 2> "$ERRF"; then return 0; fi
     # fail closed: so HTTP 404 e "nao existe"; qualquer outro erro (5xx, 401, 403, rede) interrompe
     if grep -q 'HTTP 404' "$ERRF"; then return 1; fi
     cat "$ERRF" >&2
     return 3
   else
-    gh api -X "$_m" "$_p"
+    gh api -X "$_m" "${_p#/}"
   fi
 }
 
 ERRF=$(mktemp)
-trap 'rm -f "$ERRF"' EXIT
+trap 'rm -f "$ERRF" "$ERRF.out"' EXIT
 
 # obter CAMINHO: GET fail-closed. 0 = existe (corpo em $out); 1 = 404 (nao existe); outro erro: aborta o script.
 obter() {
@@ -94,12 +116,30 @@ enc() { printf '%s' "$1" | jq -sRr '@uri'; }
 
 if [ "$DRY" = nao ]; then
   command -v gh > /dev/null || die "gh nao encontrado no PATH"
-  gh api "$R" > /dev/null || die "nao consegui ler $REPO (login do gh e permissao de admin?)"
+  gh api "${R#/}" > /dev/null || die "nao consegui ler $REPO (login do gh e permissao de admin?)"
+fi
+
+# ---------- GitHub App instalado? (antes de qualquer escrita) ----------
+# Sem a instalacao no repositorio o ruleset (bypass do App) falha com 422; melhor parar antes de mexer em algo.
+msg_app() {
+  die "o GitHub App (id $APP_ID) não está instalado em $REPO: instale em https://github.com/apps/${APP_SLUG:-<slug-do-app>}/installations/new e rode o setup de novo"
+}
+if [ "$DRY" = sim ]; then
+  chamar GET "/orgs/$ORG/installations?per_page=100" > /dev/null || true
+elif obter "/orgs/$ORG/installations?per_page=100"; then
+  INST=$(printf '%s' "$out" | jq -c --argjson a "$APP_ID" '.installations[]? | select(.app_id == $a)' | head -n 1)
+  [ -n "$APP_SLUG" ] || APP_SLUG=$(printf '%s' "$INST" | jq -r '.app_slug // empty')
+  [ -n "$INST" ] || msg_app
+  info "App $APP_ID: instalado em $ORG (repository_selection: $(printf '%s' "$INST" | jq -r '.repository_selection'))"
+else
+  info "AVISO: nao consegui listar as instalacoes de $ORG (nao e organizacao?); a instalacao do App sera conferida ao criar os rulesets."
 fi
 
 # ---------- Teams ----------
 TEAM_QA="" TEAM_RM=""
-for t in qa negocio tech-leads release-managers; do
+for par in qa:"$G_QA" negocio:"$G_NEGOCIO" tl:"$G_TL" rm:"$G_RM"; do
+  papel=${par%%:*}
+  t=${par#*:}
   if obter "/orgs/$ORG/teams/$t"; then
     info "team $t: ja existe"
   else
@@ -111,12 +151,13 @@ for t in qa negocio tech-leads release-managers; do
     [ "$DRY" = sim ] || die "nao consegui o id da Team $t"
     id=1
   fi
-  [ "$t" = qa ] && TEAM_QA=$id
-  [ "$t" = release-managers ] && TEAM_RM=$id
-  # So as Teams revisoras (qa, release-managers) precisam de acesso ao repo para aprovar Environments.
-  # Nunca rebaixa: so concede `push` se a Team ainda nao tem nenhum acesso ao repositorio.
-  case $t in
-    qa | release-managers)
+  [ "$papel" = qa ] && TEAM_QA=$id
+  [ "$papel" = rm ] && TEAM_RM=$id
+  # qa e rm revisam Environments; tl (e rm) disparam voltar/destravar: precisam de acesso ao repo.
+  # negocio so comenta (leitura basta em repo publico). Nunca rebaixa: so concede `push` se a Team ainda nao tem
+  # nenhum acesso ao repositorio.
+  case $papel in
+    qa | tl | rm)
       if obter "/orgs/$ORG/teams/$t/repos/$REPO" > /dev/null; then
         info "team $t: ja tem acesso ao repo (mantido)"
       else
@@ -161,7 +202,14 @@ PAGES=$(jq -n '{source: {branch: "gh-pages", path: "/"}}')
 if obter "$R/pages" > /dev/null; then
   chamar PUT "$R/pages" "$PAGES" > /dev/null || info "AVISO: nao consegui atualizar o Pages"
 else
-  chamar POST "$R/pages" "$PAGES" > /dev/null || info "AVISO: nao consegui habilitar o Pages (plano do repositorio?)"
+  if chamar POST "$R/pages" "$PAGES" > /dev/null 2> "$ERRF"; then
+    info "Pages: habilitado"
+  elif grep -q 'HTTP 409' "$ERRF"; then
+    info "Pages: já habilitado"   # 409 = ja estava habilitado (o GET acima nao o enxergou)
+  else
+    cat "$ERRF" >&2
+    info "AVISO: nao consegui habilitar o Pages (plano do repositorio?)"
+  fi
 fi
 
 # ---------- Environments ----------
@@ -257,12 +305,17 @@ ruleset() {
     _id=$(printf '%s' "$RULESETS" | jq -r --arg n "$1" '[.[] | select(.name == $n) | .id][0] // empty' | head -n 1)
   fi
   if [ -n "$_id" ]; then
-    chamar PUT "$R/rulesets/$_id" "$_corpo" > /dev/null
-    info "ruleset $1: atualizado"
+    _m=PUT _p="$R/rulesets/$_id" _v=atualizado
   else
-    chamar POST "$R/rulesets" "$_corpo" > /dev/null
-    info "ruleset $1: criado"
+    _m=POST _p="$R/rulesets" _v=criado
   fi
+  if ! chamar "$_m" "$_p" "$_corpo" > "$ERRF.out" 2> "$ERRF"; then
+    # 422 "must be part of the ruleset source": o App existe, mas nao esta liberado para este repositorio
+    if grep -q 'must be part of the ruleset source' "$ERRF" "$ERRF.out" 2> /dev/null; then msg_app; fi
+    cat "$ERRF" "$ERRF.out" >&2
+    die "falha ao gravar o ruleset $1"
+  fi
+  info "ruleset $1: $_v"
 }
 # main/qa/hom: `update` ja barra push e merge de quem nao e bypass (inclui force push); non_fast_forward e deletion reforcam.
 ruleset gitflow-ambientes branch '["refs/heads/main","refs/heads/qa","refs/heads/hom"]' \

@@ -213,11 +213,8 @@ orquestrador (equivalentes de `ci/github-actions/`) e um `setup/<nome>.sh`. O co
 | Rulesets não protegem `refs/gitflow/lock/*` | quem tem escrita pode apagar um lock | workflow `destravar`; acesso de escrita só a quem precisa |
 | `meta/rerere` não é protegida | quem tem escrita pode publicar resoluções | revisar os commits de `meta/rerere` |
 | Horários fixos no cron do chamador (UTC) | não são configuráveis pelo `.gitflow.env` | editar o `schedule` do `gitflow.yml` |
-| `voltar` e `destravar` conferem `tech-leads`/`release-managers` fixos | ignoram `GRUPO_TL`/`GRUPO_RM` | usar esses slugs de Team |
-| `setup/github.sh` cria Teams com slugs fixos | outros `GRUPO_*` exigem ajuste manual dos revisores | — |
-| Workflows não repassam secrets além do App | `NOTIFICAR_WEBHOOK` (Slack/Teams) não chega aos jobs | usar `pr-comment`/`console` |
-| `FORCAR=true` não ignora "nada mudou" | apesar da descrição do input no chamador, só desliga P6/P7 | republicar com `job=esteira` |
-| `TZ` e `TERMO_PR` no `.gitflow.env` | sem efeito no GitHub | — |
+| `FORCAR=true` não ignora "nada mudou" | só desliga P6/P7 (como a descrição do input diz) | republicar com `job=esteira` |
+| `TZ` e `TERMO_PR` não são chaves do `.gitflow.env` | recusadas com aviso: o fuso é fixo (`America/Sao_Paulo`) e o termo vem do provider | — |
 | Montagem `qa`/`hom` manual e esteira manual não conferem Team | quem roda workflows pode montar/republicar | restringir quem tem `write` |
 | Scripts `.ps1` da aplicação | não detectados | usar `sh` |
 | Deploy em IIS, artefatos em Nexus/GitLab Packages | ainda não implementados | adaptadores `pasta`/`pages`/`github-release` |

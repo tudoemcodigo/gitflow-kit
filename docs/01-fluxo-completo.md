@@ -206,7 +206,7 @@ flowchart TB
     G1 -- "não" --> STOP1["PARADO"]
     G1 -- "sim ou não se aplica" --> P5{"P5: main = commit da versão em PRD?"}
     P5 -- "não" --> STOP2["PARADO: conclua o publicar.sh"]
-    P5 -- "sim" --> P67{"FORCAR=false e<br/>HOM em modo Release ou Hotfix (P6)<br/>ou hotfix em teste no QA (P7)?"}
+    P5 -- "sim" --> P67{"FORCAR=false e<br/>HOM em modo Release ou Hotfix (P6)<br/>ou hotfix em teste/aprovado e ainda não promovido (P7)?"}
     P67 -- "sim" --> AD2["montagem adiada: sai sem erro"]
     P67 -- "não" --> SEL["seleciona as entregas (seção 5)"]
     SEL --> BASE["checkout da origin/main<br/>carrega o cache rerere de meta/rerere"]
@@ -330,7 +330,7 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     A(["Incidente em PRD v2.5.0"]) --> B["hotfix/2.5.1 a partir da tag v2.5.0<br/>PR para a main"]
-    B --> C["/entregar: rc/hotfix-2-5-1.1<br/>label Ambiente::Hotfix<br/>QA reservado (P7)"]
+    B --> C["/entregar: rc/hotfix-2-5-1.1<br/>label Ambiente::Hotfix<br/>QA reservado até o promover-hotfix (P7)"]
     C --> D["RM: job=montar ALVO=hotfix HOTFIX=2.5.1<br/>qa.* título Hotfix 2.5.1 = main + hotfix"]
     D --> E[["esteira QA + checagem-qa"]]
     E --> F{"QA"}

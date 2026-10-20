@@ -1,3 +1,4 @@
+GET /orgs/acme/installations?per_page=100
 GET /orgs/acme/teams/qa
 POST /orgs/acme/teams
 GET /orgs/acme/teams/qa/repos/acme/app
@@ -6,6 +7,8 @@ GET /orgs/acme/teams/negocio
 POST /orgs/acme/teams
 GET /orgs/acme/teams/tech-leads
 POST /orgs/acme/teams
+GET /orgs/acme/teams/tech-leads/repos/acme/app
+PUT /orgs/acme/teams/tech-leads/repos/acme/app
 GET /orgs/acme/teams/release-managers
 POST /orgs/acme/teams
 GET /orgs/acme/teams/release-managers/repos/acme/app

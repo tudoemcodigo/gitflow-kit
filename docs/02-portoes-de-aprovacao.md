@@ -73,8 +73,8 @@ flowchart TB
 | G12 | Voltar ambiente, destravar lock | `tech-leads` ou `release-managers` | `workflow_dispatch` `job=voltar` / `job=destravar` | `ci/github-actions/exige-membro.sh` |
 | G13 | Escrita em branches e tags protegidas | só o GitHub App (e `release-managers` em `v*`) | — | rulesets `gitflow-ambientes`, `gitflow-tags`, `gitflow-versoes` |
 
-Os nomes das Teams vêm do `.gitflow.env` (`GRUPO_QA`, `GRUPO_NEGOCIO`, `GRUPO_TL`, `GRUPO_RM`), exceto em G12, onde
-`tech-leads` e `release-managers` estão fixos no workflow.
+Os nomes das Teams vêm do `.gitflow.env` (`GRUPO_QA`, `GRUPO_NEGOCIO`, `GRUPO_TL`, `GRUPO_RM`), inclusive em G12
+(`voltar`/`destravar` conferem `GRUPO_TL` e `GRUPO_RM`).
 
 ---
 
@@ -155,7 +155,7 @@ aviso "⚠️ MODO_DEMO" no PR. É uma das duas únicas regras que o modo demo r
 | **P11** montagem e publicação são uma unidade | lock `montagem-qa`/`montagem-hom` preso da montagem até o fim da esteira | agendada: "adiada" (sai sem erro); manual: espera até 30 min e então para | `core/fluxo-montar.sh` |
 | **P5** `main` = PRD | o commit do último deployment `success` de PRD é o commit da `origin/main` | **PARADO**: "a main não é igual a PRD. Conclua o publicar.sh antes de montar" | `core/montar.sh` |
 | **P6** modo release | se a build publicada na HOM tem título `Release …` ou `Hotfix …`, a montagem `hom` não roda | "montagem adiada" (sai sem erro) | `core/montar.sh` |
-| **P7** modo hotfix | se há PR `hotfix/*` cuja última entrega está em teste, a montagem `qa` não roda | "hotfix em teste: QA reservado" (sai sem erro) | `core/montar.sh`, `hotfix_aguardando_qa` |
+| **P7** modo hotfix | se há PR `hotfix/*` cuja última entrega está em teste **ou aprovada no QA e ainda não promovida** (nenhuma `hom.*` "Hotfix X.Y.Z" com a entrega no manifesto), a montagem `qa` não roda: o QA fica reservado do `/entregar` até o `promover-hotfix` | "hotfix em teste: QA reservado" (sai sem erro) | `core/montar.sh`, `hotfix_aguardando_qa` |
 | P6/P7 forçados | `FORCAR=true` desliga só essas duas guardas (cancelar release; remontagem depois do PRD) | — | `core/montar.sh` |
 | **P4** conflito de aprovada | entrega homologada ou aprovada que conflita (e o rerere não resolve; na release nunca resolve) | **PARADO**: "conflito em entrega aprovada" | `core/montar.sh` |
 | conflito de entrega em teste (R2a) | — | fica fora: label `Montagem::Conflito` e comentário "Atualize com a main e entregue de novo" | `core/montar.sh` |
@@ -295,7 +295,7 @@ vale a mais grave (Erro > Ajuste > Alteração); isso é combinado entre PO e QA
 |---|---|
 | **Quando** | Depois de `regressao-ok` na preview |
 | **Quem** | `GRUPO_RM` (`release-managers`) |
-| **Como** | Actions → `gitflow` → **Run workflow**: `job=release`, `VERSAO=X.Y.Z`, `HOM_TAG=hom.*`, `ISSUE=N` (deixe `PULAR_CHECAGEM` desligado: em PRD ele faz o `preparar` recusar) |
+| **Como** | Actions → `gitflow` → **Run workflow**: `job=release`, `VERSAO=X.Y.Z`, `HOM_TAG=hom.*`, `ISSUE=N` (o workflow não tem `PULAR_CHECAGEM`: em PRD ele nunca vale) |
 
 **Confere** (`core/criar-release.sh`, antes de qualquer push):
 
@@ -374,8 +374,8 @@ Team é feita pelo script, com a identidade de quem disparou (`github.triggering
 
 | Ação | Como | Quem | Confere / faz |
 |---|---|---|---|
-| Voltar um ambiente | `job=voltar AMBIENTE=qa\|hom\|prd` | `tech-leads` ou `release-managers` (nomes fixos no workflow) | pega `ambiente-AMB` (até 30 min), roda `core/voltar.sh` (última build com deployment `success` antes da atual; na HOM ignora previews de release que nunca foram a PRD), solta o lock. Se a volta falhar, o lock fica preso e há alerta |
-| Destravar um lock | `job=destravar NOME=<lock>` | `tech-leads` ou `release-managers` | `NOME` em `comandos`, `montagem-qa`, `montagem-hom`, `ambiente-qa`, `ambiente-hom`, `ambiente-prd`; `core/lock.sh forcar-soltar` |
+| Voltar um ambiente | `job=voltar AMBIENTE=qa\|hom\|prd` | `GRUPO_TL` ou `GRUPO_RM` (`tech-leads` ou `release-managers`) | pega `ambiente-AMB` (até 30 min), roda `core/voltar.sh` (última build com deployment `success` antes da atual; na HOM ignora previews de release que nunca foram a PRD), solta o lock. Se a volta falhar, o lock fica preso e há alerta |
+| Destravar um lock | `job=destravar NOME=<lock>` | `GRUPO_TL` ou `GRUPO_RM` | `NOME` em `comandos`, `montagem-qa`, `montagem-hom`, `ambiente-qa`, `ambiente-hom`, `ambiente-prd`; `core/lock.sh forcar-soltar` |
 
 ---
 

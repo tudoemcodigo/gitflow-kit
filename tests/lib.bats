@@ -135,6 +135,18 @@ corpo y" qa/1.0.0-rc.1
   tag rc/hotfix-2-5-1.1
   run hotfix_aguardando_qa
   assert_output "hotfix/2.5.1"
+  # aprovado no QA e ainda nao promovido: continua reservando
+  tag qa-ok/hotfix-2-5-1.1
+  run hotfix_aguardando_qa
+  assert_output "hotfix/2.5.1"
+  # promovido (hom.* "Hotfix X" com a entrega no manifesto): libera
+  printf 'Hotfix 2.5.1
+
+rc/hotfix-2-5-1.1 !1 x
+' > "$BATS_TEST_TMPDIR/m"
+  git tag -a --cleanup=verbatim hom.2026-01-01.1 -F "$BATS_TEST_TMPDIR/m"
+  run hotfix_aguardando_qa
+  assert_output ""
 }
 
 @test "sai, para, recusa_pr" {
@@ -276,4 +288,28 @@ corpo y" qa/1.0.0-rc.1
   export NOTIFICAR_WEBHOOK=https://hooks.example/env
   carregar_config 2> /dev/null
   [ "$NOTIFICAR_WEBHOOK" = https://hooks.example/env ]
+}
+
+@test "carregar_config: TZ e TERMO_PR nao sao chaves do .gitflow.env (sem efeito)" {
+  printf 'TZ=UTC\nTERMO_PR=XX\n' > .gitflow.env
+  run --separate-stderr carregar_config
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"chave não permitida em .gitflow.env: TZ"* ]]
+  [[ "$stderr" == *"chave não permitida em .gitflow.env: TERMO_PR"* ]]
+  carregar_config 2> /dev/null
+  [ "$TZ" = America/Sao_Paulo ]
+  [ "$TERMO_PR" = MR ]   # padrao do core (o provider github define PR por conta propria)
+}
+
+@test "exige-membro: @GRUPO_TL e @GRUPO_RM valem os grupos do .gitflow.env" {
+  printf 'GRUPO_TL=meus-tls\nGRUPO_RM=meus-rms\n' > .gitflow.env
+  unset GRUPO_TL GRUPO_RM
+  fake_membro ana meus-tls
+  fake_membro bia tech-leads
+  EM="$KIT_DIR/ci/github-actions/exige-membro.sh"
+  BUILD_USER_ID=ana run sh "$EM" @GRUPO_TL @GRUPO_RM
+  assert_success
+  BUILD_USER_ID=bia run sh "$EM" @GRUPO_TL @GRUPO_RM
+  assert_failure
+  assert_output --partial "meus-tls meus-rms"
 }

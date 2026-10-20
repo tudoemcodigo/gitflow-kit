@@ -63,7 +63,7 @@ Estas saídas **não são erro** (run verde):
 | "adiada: AMB aguardando run=… url=…" | montagem agendada encontrou `montagem-AMB` preso (a esteira anterior ainda não terminou, ex.: checagem pendente) | quando a esteira anterior terminar; a próxima janela monta |
 | "HOM em modo 'Release X.Y.Z': montagem adiada." | P6 | depois do PRD (remontagem automática com `FORCAR`) ou `job=montar ALVO=hom FORCAR=true` |
 | "HOM em modo 'Hotfix X.Y.Z': montagem adiada." | P7 | depois do PRD do hotfix |
-| "hotfix em teste: QA reservado." | P7 | depois do `/aprovar` (ou `/retirar`) da entrega do hotfix |
+| "hotfix em teste: QA reservado." | P7 | depois do `promover-hotfix` (a `hom.*` Hotfix leva a entrega à HOM), ou do `/reprovar`/`/retirar` da entrega do hotfix |
 | "nada mudou desde qa.…" | mesma base, rerere e entregas da build publicada | quando houver entrega/decisão nova |
 
 ---

@@ -170,7 +170,7 @@ As próximas montagens `qa`/`hom`/`hotfix` carregam `meta/rerere`; a montagem `r
 | # | Quem | Ação |
 |---|---|---|
 | 1 | TL | autoriza |
-| 2 | Dev | `hotfix/2.5.1` a partir de `v2.5.0`, PR, review, `/entregar` (QA fica reservado: montagem `qa` normal é adiada) |
+| 2 | Dev | `hotfix/2.5.1` a partir de `v2.5.0`, PR, review, `/entregar` (QA fica reservado até o `promover-hotfix`: montagem `qa` normal é adiada) |
 | 3 | RM | `job=montar`, `ALVO=hotfix`, `HOTFIX=2.5.1` → `qa.*` "Hotfix 2.5.1" |
 | 4 | QA | checagem + `/aprovar` |
 | 5 | RM | **logo em seguida**: `job=promover-hotfix`, `QA_TAG=qa.*` → `hom.*` "Hotfix 2.5.1" no mesmo commit |

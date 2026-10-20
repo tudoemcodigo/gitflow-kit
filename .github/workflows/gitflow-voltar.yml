@@ -18,6 +18,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -49,12 +51,14 @@ jobs:
         working-directory: app
         run: |
           case "$AMBIENTE" in qa | hom | prd) ;; *) echo "ambiente invalido: $AMBIENTE" >&2; exit 1 ;; esac
-          sh "$KIT_DIR/ci/github-actions/exige-membro.sh" tech-leads release-managers
+          sh "$KIT_DIR/ci/github-actions/exige-membro.sh" @GRUPO_TL @GRUPO_RM
       - id: trava
         name: Pegar o lock do ambiente
         working-directory: app
         run: sh "$KIT_DIR/core/lock.sh" pegar "ambiente-$AMBIENTE" 1800
       - name: Voltar
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/voltar.sh" "$AMBIENTE"
       - name: Soltar o lock do ambiente
@@ -62,6 +66,8 @@ jobs:
         working-directory: app
         run: sh "$KIT_DIR/core/lock.sh" soltar "ambiente-$AMBIENTE"
       - name: Volta falhou - lock mantido
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         if: failure() && steps.trava.outcome == 'success'
         working-directory: app
         run: |

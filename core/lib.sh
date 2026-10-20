@@ -32,7 +32,7 @@ carregar_config() {
           echo "chave não permitida em .gitflow.env: $_k (defina pelo ambiente)" >&2; continue ;;
       esac
       case "$_k" in
-        GITFLOW_PROVIDER | ARTEFATOS | DEPLOY | NOTIFICAR | LIMITE_QA | ID_REGEX | MODO_DEMO | TERMO_PR | TZ) ;;
+        GITFLOW_PROVIDER | ARTEFATOS | DEPLOY | NOTIFICAR | LIMITE_QA | ID_REGEX | MODO_DEMO) ;;
         GRUPO_* | URL_* | PAGES_* | ARTEFATOS_* | DEPLOY_* | NOTIFICAR_*) ;;
         *) echo "chave não permitida em .gitflow.env: $_k" >&2; continue ;;
       esac
@@ -218,13 +218,26 @@ aprovadas_vigentes() {
   done
 }
 
+# hotfix promovido = existe hom.* "Hotfix X.Y.Z" cujo manifesto traz a entrega (criada pelo promover-hotfix)
+hotfix_promovido() {   # VERSAO RC
+  git tag -l 'hom.*' | while read -r _h; do
+    [ "$(assunto "$_h")" = "Hotfix $1" ] || continue
+    if manifesto_de "$_h" | awk -v r="$2" '$1 == r {f = 1} END {exit !f}'; then echo sim; break; fi
+  done
+}
+
+# P7: o QA fica reservado do /entregar do hotfix (teste) ate o promover-hotfix levá-lo à HOM (teste ou qa-ok, sem hom.*)
 hotfix_aguardando_qa() {
   LISTA=$(mrs_abertos) || return 1
-  printf "%s\n" "$LISTA" | while read -r _ SRC _; do
+  printf "%s
+" "$LISTA" | while read -r _ SRC _; do
     [ -n "$SRC" ] || continue
     case "$SRC" in hotfix/*)
       RC=$(ultima_rc "$(id_da_branch "$SRC")")
-      if [ -n "$RC" ] && [ "$(estado "$RC")" = teste ]; then echo "$SRC"; fi ;;
+      [ -n "$RC" ] || continue
+      case "$(estado "$RC")" in
+        teste | qa-ok) [ -n "$(hotfix_promovido "${SRC#hotfix/}" "$RC")" ] || echo "$SRC" ;;
+      esac ;;
     esac
   done
 }

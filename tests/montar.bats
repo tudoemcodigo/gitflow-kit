@@ -84,6 +84,33 @@ HOJE() { date +%F; }
   [ "$(saida_tag)" = "qa.$(HOJE).2" ]
 }
 
+@test "P7 reserva do QA vale ate o promover-hotfix: qa-ok sem promocao adia; depois da promocao monta" {
+  git -C "$WORK" checkout -q -B hotfix/2.5.1 main
+  echo h > "$WORK/h.txt"; git -C "$WORK" add h.txt; git -C "$WORK" commit -q -m h
+  git -C "$WORK" push -q origin hotfix/2.5.1
+  fake_pr 9 hotfix/2.5.1 dev
+  git -C "$WORK" tag -a rc/hotfix-2-5-1.1 -m x
+  git -C "$WORK" push -q origin refs/tags/rc/hotfix-2-5-1.1
+  BUILD_USER_ID=rm1 HOTFIX=2.5.1 rodar montar.sh hotfix
+  assert_success
+  tagqa=$(saida_tag)
+  publicar_build "$tagqa"
+  id=$(deploy_iniciar qa "$tagqa" "$(git -C "$WORK" rev-parse "$tagqa^{commit}")")
+  deploy_concluir "$id" success
+  # aprovado no QA, ainda sem promocao: a montagem agendada nao pode trocar o QA
+  decidir qa-ok hotfix-2-5-1
+  BUILD_USER_ID=timer rodar montar.sh qa
+  assert_success
+  assert_output --partial "hotfix em teste: QA reservado."
+  [ "$(git -C "$ORIGIN" rev-parse refs/heads/qa)" = "$(git -C "$WORK" rev-parse "$tagqa^{commit}")" ]
+  # promocao: a reserva termina
+  BUILD_USER_ID=rm1 rodar promover-hotfix.sh "$tagqa"
+  assert_success
+  BUILD_USER_ID=timer rodar montar.sh qa
+  assert_success
+  refute_output --partial "QA reservado"
+}
+
 @test "release por nao release manager e recusado; versao invalida" {
   VERSAO=1.1.0 rodar montar.sh release
   assert_failure

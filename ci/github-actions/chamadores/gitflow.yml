@@ -35,7 +35,7 @@ on:
         type: boolean
         default: false
       FORCAR:
-        description: montar - ignora a trava de nada-novo
+        description: montar - ignora o modo release/hotfix (P6/P7)
         type: boolean
         default: false
       TAG:
@@ -48,7 +48,7 @@ on:
         default: qa
         options: [qa, hom, prd]
       PULAR_CHECAGEM:
-        description: esteira - pula a checagem da build ja publicada
+        description: esteira - pula a checagem manual (R7; so para republicar a build ja publicada)
         type: boolean
         default: false
       HOM_TAG:
@@ -91,7 +91,6 @@ jobs:
       HOTFIX: ${{ inputs.HOTFIX || '' }}
       EXPRESSO: ${{ inputs.EXPRESSO || false }}
       FORCAR: ${{ inputs.FORCAR || false }}
-      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM || false }}
     secrets: inherit
 
   esteira:
@@ -119,7 +118,6 @@ jobs:
       VERSAO: ${{ inputs.VERSAO }}
       HOM_TAG: ${{ inputs.HOM_TAG }}
       ISSUE: ${{ inputs.ISSUE }}
-      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
     secrets: inherit
 
   promover-hotfix:
@@ -127,7 +125,6 @@ jobs:
     uses: tudoemcodigo/gitflow-kit/.github/workflows/gitflow-promover-hotfix.yml@v1
     with:
       QA_TAG: ${{ inputs.QA_TAG }}
-      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
     secrets: inherit
 
   voltar:

@@ -146,13 +146,16 @@ Publique esses arquivos na `main` da aplicação **antes** do passo 5 (depois do
 ## 5. Configurar o repositório: `setup/github.sh`
 
 ```sh
-sh setup/github.sh --repo minha-org/minha-app --app-id 123456 [--dry-run] [--modo-demo]
+sh setup/github.sh --repo minha-org/minha-app --app-id 123456 [--app-slug SLUG] [--grupo-qa S] [--grupo-negocio S] \
+  [--grupo-tl S] [--grupo-rm S] [--dry-run] [--modo-demo]
 ```
 
 | Opção | Efeito |
 |---|---|
 | `--repo ORG/REPO` | repositório da aplicação (obrigatório) |
 | `--app-id ID` | id numérico do App; vira ator de bypass dos rulesets (obrigatório) |
+| `--app-slug SLUG` | slug do App, só para a mensagem de instalação; padrão: o `app_slug` devolvido pela API de instalações |
+| `--grupo-qa`, `--grupo-negocio`, `--grupo-tl`, `--grupo-rm` | slugs das Teams (padrões `qa`, `negocio`, `tech-leads`, `release-managers`); use os mesmos valores em `GRUPO_*` do `.gitflow.env` |
 | `--dry-run` | imprime `METODO caminho` de cada chamada, sem executar |
 | `--modo-demo` | `prevent_self_review=false` em `aprovacao-prd` (quem dispara pode aprovar PRD) |
 
@@ -160,11 +163,12 @@ O que ele faz, em ordem (idempotente; leituras com erro diferente de 404 abortam
 
 | # | Item | Detalhe |
 |---|---|---|
-| 1 | Teams | cria `qa`, `negocio`, `tech-leads`, `release-managers` se faltarem; dá `push` no repositório a `qa` e `release-managers` (só se não tiverem acesso) |
+| 0 | GitHub App | confere, em `orgs/ORG/installations` (escopo `admin:org`), que o App está instalado; se não estiver, para **antes de qualquer escrita**: `o GitHub App (id N) não está instalado em ORG/REPO: instale em https://github.com/apps/<slug>/installations/new e rode o setup de novo`. Se a instalação for só de repositórios selecionados e o repositório não estiver nela, o ruleset falha com 422 e a mesma mensagem é mostrada |
+| 1 | Teams | cria as quatro Teams se faltarem; dá `push` no repositório a `qa`, `tech-leads` e `release-managers` (só se não tiverem acesso; nunca rebaixa). `negocio` não recebe acesso |
 | 2 | Repositório | squash e rebase merge desligados; merge commit ligado; issues ligadas |
 | 3 | Branches | cria `qa`, `hom`, `meta/rerere` a partir da `main` |
-| 4 | Pages | cria `gh-pages` órfã e habilita o Pages (deploy `pages`) |
-| 5 | Environments | `qa`, `hom`, `production` sem revisores; `checagem-qa` e `checagem-hom` com a Team `qa`; `aprovacao-prd` com `release-managers` e `prevent_self_review` |
+| 4 | Pages | cria `gh-pages` órfã e habilita o Pages (deploy `pages`); HTTP 409 ("já habilitado") conta como sucesso |
+| 5 | Environments | `qa`, `hom`, `production` sem revisores; `checagem-qa` e `checagem-hom` com a Team `qa`; `aprovacao-prd` com a Team RM e `prevent_self_review` |
 | 6 | Template de PR | cria `.github/pull_request_template.md` na `main` se faltar |
 | 7 | Estado inicial de PRD | se não há tag `v*`, cria `v0.1.0` anotada na `main`; se não há deployment em `production`, cria um `success` na versão mais nova |
 | 8 | Labels | sincroniza `setup/modelos/labels.tsv` |
@@ -173,8 +177,11 @@ O que ele faz, em ordem (idempotente; leituras com erro diferente de 404 abortam
 
 > [!WARNING]
 > Os Environments listados e os três rulesets são **totalmente gerenciados** pelo script: cada execução sobrescreve
-> alterações manuais. Personalizações devem usar outros nomes. Os nomes das Teams estão fixos no script: se o
-> `.gitflow.env` usar outros slugs, crie as Teams e ajuste os revisores dos Environments à mão.
+> alterações manuais. Personalizações devem usar outros nomes. Se o `.gitflow.env` usar outros slugs de Team,
+> passe os mesmos valores em `--grupo-*` (Teams, revisores dos Environments e bypass de `v*` seguem esses slugs).
+>
+> No Windows (Git Bash) o script chama `gh api` sem barra inicial e define `MSYS_NO_PATHCONV=1`, para o Git Bash não
+> converter os caminhos.
 
 ---
 
@@ -214,7 +221,6 @@ Uma variável já definida no ambiente vence o arquivo.
 | `ID_REGEX` | `[A-Z]+-[0-9]+` | ID da tarefa no nome da branch |
 | `URL_QA`, `URL_HOM`, `URL_PRD` | — | usadas por `deploy_saude` (adaptador `pages`) |
 | `PAGES_*`, `ARTEFATOS_*`, `DEPLOY_*`, `NOTIFICAR_*` | — | ajustes de adaptador (ex.: `PAGES_TENTATIVAS`, `ARTEFATOS_RELEASE_TAG`, `NOTIFICAR_ISSUE`) |
-| `TERMO_PR`, `TZ` | `PR` (GitHub), `America/Sao_Paulo` | aceitas, mas hoje sem efeito: o provider `github` redefine `TERMO_PR` e `core/lib.sh` fixa `TZ` |
 
 **Recusadas no arquivo** (só pelo ambiente/secrets do CI): `PAGES_REMOTE`, `ARTEFATOS_URL`, `ARTEFATOS_DIR`,
 `DEPLOY_DIR`, qualquer `*_REMOTE`, `*_TOKEN`, `*_SENHA`, `*_PASSWORD`, `*_WEBHOOK`. Qualquer chave fora da lista
@@ -228,8 +234,8 @@ também é recusada (`PATH`, `GIT_*`, `BASH_ENV`… nunca vêm do arquivo). Nome
 |---|---|---|
 | `qa` | `push` (o setup concede) | rodar `job=regressao`/`montar`; ser revisora de `checagem-*` |
 | `release-managers` | `push` (o setup concede) | rodar `release`/`montar`/`promover-hotfix`; revisora de `aprovacao-prd`; bypass em `v*` |
-| `tech-leads` | `push` (conceder à mão) | rodar `voltar`/`destravar`; review |
-| `negocio` | acesso de leitura ou triagem (conceder à mão em repositório privado) | comentar comandos no PR |
+| `tech-leads` | `push` (o setup concede) | rodar `voltar`/`destravar` (dispatch); review |
+| `negocio` | nenhum no repositório público (comentar só exige leitura). Em repositório **privado**, conceda `pull` (leitura) à mão | comentar comandos no PR |
 
 Comandos de PR só são processados para autores com associação `OWNER`, `MEMBER` ou `COLLABORATOR`.
 

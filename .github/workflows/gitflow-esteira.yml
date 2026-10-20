@@ -32,6 +32,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -64,6 +66,8 @@ jobs:
           app-id: ${{ secrets.GITFLOW_APP_ID }}
           app-key: ${{ secrets.GITFLOW_APP_KEY }}
       - name: Preparar
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" preparar
       - uses: actions/upload-artifact@v4
@@ -157,6 +161,8 @@ jobs:
           name: gitflow-pacote
           path: ${{ runner.temp }}/gitflow
       - name: Publicar pacote
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" publicar-pacote
 
@@ -217,6 +223,8 @@ jobs:
           name: gitflow-estado-2
           path: ${{ runner.temp }}/gitflow
       - name: Implantar
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" implantar
       - uses: actions/upload-artifact@v4
@@ -293,6 +301,8 @@ jobs:
           name: gitflow-estado-3
           path: ${{ runner.temp }}/gitflow
       - name: Registrar
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         working-directory: app
         run: sh "$KIT_DIR/core/esteira.sh" registrar
       - name: Remontar QA e HOM (depois do PRD)
@@ -329,6 +339,7 @@ jobs:
       - name: Desfazer (ou alertar)
         working-directory: app
         env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
           R_CHEC: ${{ needs.checagem.result }}
           R_REG: ${{ needs.registrar.result }}
         run: sh "$KIT_DIR/ci/github-actions/falhou.sh"

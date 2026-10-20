@@ -6,9 +6,6 @@ on:
       QA_TAG:
         type: string
         required: true
-      PULAR_CHECAGEM:
-        type: boolean
-        default: false
       montar-workflow:
         type: string
         default: gitflow.yml
@@ -23,6 +20,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -53,6 +52,8 @@ jobs:
           app-id: ${{ secrets.GITFLOW_APP_ID }}
           app-key: ${{ secrets.GITFLOW_APP_KEY }}
       - name: Promover
+        env:
+          NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}
         id: promover
         working-directory: app
         run: |
@@ -66,10 +67,10 @@ jobs:
     with:
       TAG: ${{ needs.promover.outputs.tag }}
       AMBIENTE: hom
-      PULAR_CHECAGEM: ${{ inputs.PULAR_CHECAGEM }}
       montar-workflow: ${{ inputs.montar-workflow }}
       kit-repo: ${{ inputs.kit-repo }}
       kit-ref: ${{ inputs.kit-ref }}
     secrets:
       GITFLOW_APP_ID: ${{ secrets.GITFLOW_APP_ID }}
       GITFLOW_APP_KEY: ${{ secrets.GITFLOW_APP_KEY }}
+      NOTIFICAR_WEBHOOK: ${{ secrets.NOTIFICAR_WEBHOOK }}

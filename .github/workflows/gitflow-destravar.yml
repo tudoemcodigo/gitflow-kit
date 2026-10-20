@@ -18,6 +18,8 @@ on:
         required: true
       GITFLOW_APP_KEY:
         required: true
+      NOTIFICAR_WEBHOOK:
+        required: false
 
 permissions:
   contents: read
@@ -47,7 +49,7 @@ jobs:
           app-key: ${{ secrets.GITFLOW_APP_KEY }}
       - name: Conferir o Team
         working-directory: app
-        run: sh "$KIT_DIR/ci/github-actions/exige-membro.sh" tech-leads release-managers
+        run: sh "$KIT_DIR/ci/github-actions/exige-membro.sh" @GRUPO_TL @GRUPO_RM
       - name: Soltar o lock
         working-directory: app
         run: |
