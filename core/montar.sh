@@ -82,9 +82,9 @@ done
 # fila do QA: quem já está em teste sempre fica; uma suspeita de checagem volta SOZINHA
 # (na montagem em que ela volta, nenhuma outra entrega nova entra); depois prioridade e antiguidade
 sort -n -k1,1 -k2,2 "$TMP/teste" | awk -v lim="${LIMITE_QA:-6}" '
-  $1 == 0                  { n++; print "entra", $3, $4; next }
-  $1 == 2 && !s && !novas  { s = 1; n++; print "entra", $3, $4; next }
-  $1 != 2 && !s && n < lim { novas = 1; n++; print "entra", $3, $4; next }
+  $1 == 0                  { n++; print "entra", $3, $4, $1; next }
+  $1 == 2 && !s && !novas  { s = 1; n++; print "entra", $3, $4, $1; next }
+  $1 != 2 && !s && n < lim { novas = 1; n++; print "entra", $3, $4, $1; next }
                            { print "fila", $3, $4 }' > "$TMP/fila"
 
 # ---------- montagem: commit novo a partir da main ----------
@@ -92,7 +92,8 @@ git checkout -q --detach origin/main
 git config rerere.enabled true; git config rerere.autoUpdate true
 if git rev-parse -q --verify origin/meta/rerere > /dev/null; then   # cache rerere compartilhado
   D="$(git rev-parse --git-dir)/rr-cache"; mkdir -p "$D"
-  git archive origin/meta/rerere | tar -x -C "$D"
+  git archive -o "$TMP/rerere.tar" origin/meta/rerere
+  tar -x -C "$D" -f "$TMP/rerere.tar"
 fi
 echo "base main $(git rev-parse --short HEAD) ($(git describe --tags --exact-match origin/main 2> /dev/null || echo sem-versao))" > "$TMP/manifesto"
 echo "rerere $(git rev-parse --short origin/meta/rerere 2> /dev/null || echo nenhum)" >> "$TMP/manifesto"
@@ -112,9 +113,10 @@ mesclar() {   # rc iid -> 0 se entrou (sem conflito, ou resolvido pelo rerere fo
   fi
   git merge --abort; return 1
 }
-incluir() {   # rc iid tipo
+incluir() {   # rc iid tipo [peso]
   if mesclar "$1" "$2"; then
     case "$3" in aprovada) T="aprovada QA" ;; teste) T="em teste" ;; *) T="$3" ;; esac
+    if [ "$3" = teste ] && [ "${4:-}" = 1 ]; then T="$T (reteste expresso)"; fi
     echo "$1 !$2 $(git rev-parse --short "$1^{commit}") $T" >> "$TMP/manifesto"
   elif [ "$3" = teste ]; then echo "fora: $1 !$2 conflito" >> "$TMP/fora"
   else echo "$1 !$2 ($3)" >> "$TMP/bloqueio"; fi
@@ -126,8 +128,8 @@ if [ "$ALVO" = qa ] || [ "$ALVO" = hom ]; then
   while read -r RC IID T; do incluir "$RC" "$IID" "$T"; done < "$TMP/l2"
 fi
 if [ "$ALVO" = qa ]; then
-  awk '$1 == "entra" {print $2, $3}' "$TMP/fila" > "$TMP/l3"
-  while read -r RC IID; do incluir "$RC" "$IID" teste; done < "$TMP/l3"
+  awk '$1 == "entra" {print $2, $3, $4}' "$TMP/fila" > "$TMP/l3"
+  while read -r RC IID PS; do incluir "$RC" "$IID" teste "$PS"; done < "$TMP/l3"
 fi
 
 # P4: conflito de entrega aprovada para a montagem
@@ -146,7 +148,10 @@ fi
 
 # manifesto: o que saiu em relação à build publicada (informativo)
 { grep '^rc/' "$TMP/publicado" || true; } | while read -r RC _; do
-  contem "$TMP/manifesto" "$RC" || echo "saiu: $RC ($(estado "$RC"))"
+  contem "$TMP/manifesto" "$RC" && continue
+  ID=${RC%.*}
+  NOVA=$(awk -v p="$ID." 'index($1, p) == 1 {print $1; exit}' "$TMP/manifesto")
+  if [ -n "$NOVA" ]; then echo "saiu: $RC substituída por $NOVA"; else echo "saiu: $RC ($(estado "$RC"))"; fi
 done >> "$TMP/fora"
 awk '$1 == "fila" {print "fila: " $2 " !" $3 " posição " ++p}' "$TMP/fila" >> "$TMP/fora"
 cat "$TMP/fora" >> "$TMP/manifesto"
@@ -176,15 +181,16 @@ git $BOT tag -a --cleanup=verbatim "$TAG" -F "$TMP/msg"
 git push -q origin "refs/tags/$TAG"
 echo "$TAG" > "$SAIDA/montagem.tag"
 
-# ---------- avisos nos MRs ----------
+# ---------- avisos nos MRs (melhor esforço: a tag já existe e a esteira precisa rodar) ----------
+av() { "$@" || echo "AVISO: falha em $1 ($2) após criar $TAG; ignorada." >&2; }
 awk '$1 == "fila" {print $3, ++p}' "$TMP/fila" | while read -r IID P; do
-  pr_rotular "$IID" "Montagem::Fila" ""; pr_comentar "$IID" "⏳ Na fila do QA (posição $P) na montagem $TAG."
+  av pr_rotular "$IID" "Montagem::Fila" ""; av pr_comentar "$IID" "⏳ Na fila do QA (posição $P) na montagem $TAG."
 done
 { grep '^fora: ' "$TMP/fora" || true; } | while read -r _ RC IID _; do
-  pr_rotular "${IID#!}" "Montagem::Conflito" ""
-  pr_comentar "${IID#!}" "⚠️ $RC conflitou na montagem $TAG e ficou fora. Atualize com a main e entregue de novo."
+  av pr_rotular "${IID#!}" "Montagem::Conflito" ""
+  av pr_comentar "${IID#!}" "⚠️ $RC conflitou na montagem $TAG e ficou fora. Atualize com a main e entregue de novo."
 done
 { grep '^rc/' "$TMP/manifesto" || true; } | while read -r RC IID _; do
-  espelhar "${IID#!}" "$RC"; pr_rotular "${IID#!}" "" "Montagem::Fila,Montagem::Conflito"
+  av espelhar "${IID#!}" "$RC"; av pr_rotular "${IID#!}" "" "Montagem::Fila,Montagem::Conflito"
 done
 echo "Criada $TAG:"; cat "$TMP/msg"

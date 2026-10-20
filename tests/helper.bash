@@ -52,5 +52,5 @@ nova_branch() {
 rodar() {
   local s="$1"
   shift
-  run env PATH="$KIT_DIR/core:$PATH" sh -c 'cd "$1" && shift && exec "$@"' _ "$WORK" "$KIT_DIR/core/$s" "$@"
+  run env PATH="$KIT_DIR/core:$PATH" sh -c 'cd "$1" && shift && exec "$@"' _ "$WORK" sh "$KIT_DIR/core/$s" "$@"
 }

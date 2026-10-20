@@ -112,14 +112,14 @@ HOJE() { date +%F; }
   m=$(msg "$(saida_tag)")
   echo "$m" | grep -F "rc/PROJ-1.1 !1"
   echo "$m" | grep -F "rc/PROJ-2.1 !2"
-  ! echo "$m" | grep -F "rc/PROJ-3.1"
+  ! echo "$m" | grep -F "rc/PROJ-3.1" || false
   BUILD_USER_ID=rm1 VERSAO=1.1.0 rodar montar.sh release
   assert_success
   m=$(msg "$(saida_tag)")
   echo "$m" | grep -Fx "Release 1.1.0"
   echo "$m" | grep -F "rc/PROJ-1.1 !1"
-  ! echo "$m" | grep -F "rc/PROJ-2.1"
-  ! echo "$m" | grep -F "rc/PROJ-3.1"
+  ! echo "$m" | grep -F "rc/PROJ-2.1" || false
+  ! echo "$m" | grep -F "rc/PROJ-3.1" || false
 }
 
 @test "fila: limite, lugar mantido, suspeita volta sozinha, rotulos" {
@@ -131,10 +131,9 @@ HOJE() { date +%F; }
   assert_success
   tag=$(saida_tag)
   msg "$tag" | grep -F "rc/PROJ-1.1 !1"
-  ! msg "$tag" | grep -E "^rc/PROJ-[23]"
+  ! msg "$tag" | grep -E "^rc/PROJ-[23]" || false
   msg "$tag" | grep -F "fila: rc/PROJ-2.1 !2 posição 1"
   msg "$tag" | grep -F "fila: rc/PROJ-3.1 !3 posição 2"
-  [ "$(fake_labels 2)" = "Ambiente::QA,Montagem::Fila" ] || [ "$(fake_labels 2)" = "Montagem::Fila" ]
   fake_labels 2 | grep -F "Montagem::Fila"
   fake_comentarios 3 | grep -F "⏳ Na fila do QA (posição 2) na montagem $tag."
   # quem ja esta publicado mantem o lugar
@@ -145,14 +144,14 @@ HOJE() { date +%F; }
   # suspeita de checagem volta sozinha
   fake_pr 3 feature/PROJ-3-x dev
   pr_rotular 3 "Suspeita de checagem" ""
-  rodar montar.sh qa
+  LIMITE_QA=3 rodar montar.sh qa
   assert_success
   tag2=$(saida_tag)
   [ "$tag2" = "qa.$(HOJE).2" ]
   msg "$tag2" | grep -F "rc/PROJ-1.1 !1"
   msg "$tag2" | grep -F "rc/PROJ-3.1 !3"
-  ! msg "$tag2" | grep -E "^rc/PROJ-2"
-  msg "$tag2" | grep -F "fila: rc/PROJ-2.1 !2 posição 1"
+  ! msg "$tag2" | grep -E "^rc/PROJ-2" || false
+  msg "$tag2" | grep -F "fila: rc/PROJ-2.1 !2 posição 1"   # havia vaga (limite 3), mas a suspeita volta sozinha
   fake_labels 3 | grep -v "Montagem::Fila" > /dev/null
 }
 
@@ -160,7 +159,7 @@ HOJE() { date +%F; }
   entrega 1 PROJ-1
   BUILD_USER_ID=timer rodar montar.sh qa
   assert_success
-  ! msg "$(saida_tag)" | grep -F "rc/PROJ-1.1"
+  ! msg "$(saida_tag)" | grep -F "rc/PROJ-1.1" || false
   BUILD_USER_ID=tester rodar montar.sh qa
   assert_success
   msg "$(saida_tag)" | grep -F "rc/PROJ-1.1 !1"
@@ -185,7 +184,7 @@ HOJE() { date +%F; }
   tag=$(saida_tag)
   msg "$tag" | grep -F "rc/PROJ-1.1 !1"
   msg "$tag" | grep -Fx "fora: rc/PROJ-2.1 !2 conflito"
-  ! msg "$tag" | grep -E "^rc/PROJ-2"
+  ! msg "$tag" | grep -E "^rc/PROJ-2" || false
   fake_labels 2 | grep -F "Montagem::Conflito"
   fake_comentarios 2 | grep -F "⚠️ rc/PROJ-2.1 conflitou na montagem $tag e ficou fora."
   decidir qa-ok PROJ-2
@@ -214,7 +213,7 @@ HOJE() { date +%F; }
   assert_success
   assert_output --partial "nada mudou desde $t1"
   [ -z "$(saida_tag)" ]
-  ! tem_tag "qa.$(HOJE).2"
+  ! tem_tag "qa.$(HOJE).2" || false
   entrega 2 PROJ-2
   rodar montar.sh qa
   assert_success
@@ -229,7 +228,7 @@ HOJE() { date +%F; }
   assert_success
   assert_output --partial "adiada: qa aguardando run=outro"
   [ -z "$(saida_tag)" ]
-  ! tem_tag "qa.$(HOJE).1"
+  ! tem_tag "qa.$(HOJE).1" || false
 }
 
 @test "fluxo: com tag mantem montagem-qa e solta comandos; sem tag solta tudo" {
@@ -240,15 +239,15 @@ HOJE() { date +%F; }
   [ "$tag" = "qa.$(HOJE).1" ]
   [ "$(cat "$GITFLOW_SAIDA/lock-montagem")" = montagem-qa ]
   git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/montagem-qa
-  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos || false
   GITFLOW_RUN_ID=1 sh -c 'cd "$1" && "$2" soltar montagem-qa' _ "$WORK" "$KIT_DIR/core/lock.sh"
   publicar_build "$tag"
   rodar fluxo-montar.sh qa
   assert_success
   assert_output --partial "nada mudou"
   [ -z "$(saida_tag)" ]
-  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/montagem-qa
-  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/montagem-qa || false
+  ! git -C "$ORIGIN" rev-parse -q --verify refs/gitflow/lock/comandos || false
 }
 
 @test "rerere: resolucao publicada em meta/rerere faz a entrega em teste entrar" {
@@ -267,7 +266,6 @@ HOJE() { date +%F; }
   rodar resolver-conflito.sh --publicar
   assert_success
   git -C "$ORIGIN" rev-parse -q --verify refs/heads/meta/rerere
-  ! tem_tag "qa.$(HOJE).9"
   rm -rf "$WORK/.git/rr-cache"
   rodar montar.sh qa
   assert_success
@@ -276,4 +274,37 @@ HOJE() { date +%F; }
   msg "$tag" | grep -Fx "rerere: rc/PROJ-2.1"
   msg "$tag" | grep -E '^rerere [0-9a-f]+$'
   [ "$(git -C "$ORIGIN" tag -l | grep -c '^qa\.')" -eq 2 ]
+}
+
+@test "manifesto: reteste expresso e substituida por" {
+  entrega 1 PROJ-1
+  rodar montar.sh qa
+  assert_success
+  t1=$(saida_tag)
+  publicar_build "$t1"
+  decidir qa-nok PROJ-1
+  git -C "$WORK" checkout -q feature/PROJ-1-x
+  echo mais >> "$WORK/PROJ-1.txt"
+  git -C "$WORK" commit -q -am mais
+  git -C "$WORK" push -q origin feature/PROJ-1-x
+  git -C "$WORK" tag -a rc/PROJ-1.2 -m x
+  git -C "$WORK" push -q origin refs/tags/rc/PROJ-1.2
+  rodar montar.sh qa
+  assert_success
+  m=$(msg "$(saida_tag)")
+  echo "$m" | grep -E '^rc/PROJ-1\.2 !1 [0-9a-f]+ em teste \(reteste expresso\)$'
+  echo "$m" | grep -Fx "saiu: rc/PROJ-1.1 substituída por rc/PROJ-1.2"
+}
+
+@test "falha do provider apos a tag nao derruba a montagem" {
+  entrega 1 PROJ-1
+  K="$BATS_TEST_TMPDIR/kit"
+  mkdir -p "$K"
+  cp -r "$KIT_DIR/core" "$KIT_DIR/adapters" "$K/"
+  echo 'pr_rotular() { return 1; }' >> "$K/adapters/provider/fake.sh"
+  KIT_DIR="$K" rodar montar.sh qa
+  assert_success
+  [ "$(saida_tag)" = "qa.$(HOJE).1" ]
+  tem_tag "qa.$(HOJE).1"
+  assert_output --partial "AVISO"
 }

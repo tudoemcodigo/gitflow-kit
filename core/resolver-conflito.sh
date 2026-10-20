@@ -16,14 +16,15 @@ case "${1:-}" in
     if [ ! -d "$GD/rr-cache" ] || [ -z "$(ls -A "$GD/rr-cache")" ]; then
       para "não há resoluções em .git/rr-cache para publicar."
     fi
-    git fetch --quiet origin '+refs/heads/meta/rerere:refs/remotes/origin/meta/rerere' 2> /dev/null || true
+    git fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*'   # falha aborta (set -e)
     TMP=$(mktemp -d)
     trap 'rm -rf "$TMP"' EXIT
     trap 'exit 1' INT TERM
     export GIT_INDEX_FILE="$TMP/index"
+    PAI=$(git rev-parse -q --verify origin/meta/rerere || true)
+    if [ -n "$PAI" ]; then git read-tree "$PAI"; fi   # parte da árvore publicada: não perde resoluções antigas
     git --work-tree="$GD/rr-cache" add -A -f .
     TREE=$(git write-tree)
-    PAI=$(git rev-parse -q --verify origin/meta/rerere || true)
     # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
     C=$(git $BOT commit-tree "$TREE" ${PAI:+-p "$PAI"} -m "rerere: resoluções publicadas")
     unset GIT_INDEX_FILE
@@ -31,6 +32,6 @@ case "${1:-}" in
     echo "Resoluções publicadas em meta/rerere ($(git rev-parse --short "$C"))."
     ;;
   qa | hom | release | hotfix)
-    GITFLOW_LOCAL=sim exec "$KIT_DIR/core/montar.sh" "$1" ;;
+    GITFLOW_LOCAL=sim exec sh "$KIT_DIR/core/montar.sh" "$1" ;;
   *) echo "uso: resolver-conflito.sh <qa|hom|release|hotfix> | --publicar" >&2; exit 2 ;;
 esac

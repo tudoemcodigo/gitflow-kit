@@ -39,11 +39,12 @@ if ! lock pegar comandos 600; then
 fi
 RC=0
 sh "$KIT_DIR/core/montar.sh" "$ALVO" || RC=$?
-lock soltar comandos
 TAG=$(cat "$SAIDA/montagem.tag")
 if [ -n "$TAG" ]; then
-  echo "$LOCK" > "$SAIDA/lock-montagem"
-else
-  lock soltar "$LOCK"
+  echo "$LOCK" > "$SAIDA/lock-montagem"   # a esteira solta no fim
 fi
-exit "$RC"
+RS=0
+lock soltar comandos || RS=$?
+if [ -z "$TAG" ]; then lock soltar "$LOCK" || RS=$?; fi
+[ "$RC" -eq 0 ] || exit "$RC"
+[ "$RS" -eq 0 ] || { echo "PARADO: falha ao soltar lock (código $RS)" >&2; exit 1; }
