@@ -15,11 +15,18 @@ kit_dir() {
 }
 
 carregar_config() {
+  # o ambiente vence o .gitflow.env: valor do arquivo só vale se a variável ainda não existe
   if [ -f .gitflow.env ]; then
-    set -a
-    # shellcheck source=/dev/null
-    . ./.gitflow.env
-    set +a
+    while IFS= read -r _l || [ -n "$_l" ]; do
+      _l=$(printf '%s' "$_l" | tr -d '\015')
+      case "$_l" in [A-Za-z_]*=*) ;; *) continue ;; esac
+      _k=${_l%%=*}
+      case "$_k" in *[!A-Za-z0-9_]*) continue ;; esac
+      if eval "[ -z \"\${$_k+x}\" ]"; then
+        eval "$_l"
+        export "${_k?}"
+      fi
+    done < .gitflow.env
   fi
   : "${LIMITE_QA:=6}"
   : "${ID_REGEX:=[A-Z]+-[0-9]+}"

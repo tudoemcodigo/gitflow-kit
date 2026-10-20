@@ -154,3 +154,13 @@ corpo y" qa/1.0.0-rc.1
   ( para "boom" ) || true
   [ "$(cat "$BATS_TEST_TMPDIR/n")" = "NOTIF alerta boom" ]
 }
+
+@test "carregar_config: ambiente vence o arquivo e CR e removido" {
+  printf 'LIMITE_QA=9\r\nNOTIFICAR=console\r\n# comentario\r\nMODO_DEMO=sim\r\n' > .gitflow.env
+  unset LIMITE_QA MODO_DEMO
+  export NOTIFICAR=nenhum
+  carregar_config
+  [ "$LIMITE_QA" = 9 ]
+  [ "$MODO_DEMO" = sim ]
+  [ "$NOTIFICAR" = nenhum ]
+}
