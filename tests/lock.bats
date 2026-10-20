@@ -47,7 +47,8 @@ tem_ref() { git -C "$ORIGIN" rev-parse -q --verify "refs/gitflow/lock/$1" > /dev
   tem_ref deploy
   run L 1 soltar deploy
   assert_success
-  ! tem_ref deploy
+  run tem_ref deploy
+  assert_failure
 }
 
 @test "soltar com lock livre e idempotente" {
@@ -70,7 +71,8 @@ tem_ref() { git -C "$ORIGIN" rev-parse -q --verify "refs/gitflow/lock/$1" > /dev
   L 1 pegar deploy
   run L 2 forcar-soltar deploy
   assert_success
-  ! tem_ref deploy
+  run tem_ref deploy
+  assert_failure
 }
 
 @test "sem RUN_ID pegar falha e subcomando invalido sai 2" {
@@ -79,4 +81,38 @@ tem_ref() { git -C "$ORIGIN" rev-parse -q --verify "refs/gitflow/lock/$1" > /dev
   assert_output --partial "GITFLOW_RUN_ID"
   run L 1 bobagem x
   assert_equal "$status" 2
+}
+
+Lt() { # RUN_ID args... (com guarda de tempo)
+  local id="$1"; shift
+  GITFLOW_RUN_ID="$id" sh -c 'cd "$1" && shift && exec timeout 30 "$@"' _ "$WORK" "$KIT_DIR/core/lock.sh" "$@"
+}
+
+@test "remoto inacessivel: pegar/soltar/forcar-soltar/dono saem 3 sem travar" {
+  git -C "$WORK" remote set-url origin "$BATS_TEST_TMPDIR/nao-existe.git"
+  run Lt 1 pegar x 0
+  assert_equal "$status" 3
+  run Lt 1 pegar x 5
+  assert_equal "$status" 3
+  run Lt 1 soltar x
+  assert_equal "$status" 3
+  run Lt 1 forcar-soltar x
+  assert_equal "$status" 3
+  run Lt 1 dono x
+  assert_equal "$status" 3
+}
+
+@test "NOME invalido e ESPERA nao numerica saem 2" {
+  run L 1 pegar "a b"
+  assert_equal "$status" 2
+  run L 1 pegar x abc
+  assert_equal "$status" 2
+  run env GITFLOW_LOCK_INTERVALO=xx sh -c 'cd "$1" && GITFLOW_RUN_ID=1 "$2" pegar x' _ "$WORK" "$KIT_DIR/core/lock.sh"
+  assert_equal "$status" 2
+}
+
+@test "forcar-soltar com lock livre sai 0" {
+  run L 1 forcar-soltar deploy
+  assert_success
+  assert_output --partial "livre"
 }
