@@ -125,6 +125,9 @@ estado() {
   else echo teste; fi
 }
 
+# labels Ambiente::* que o kit escreve/remove (sem PRD, que só a publicação coloca)
+LABELS_AMBIENTE="Ambiente::QA,Ambiente::QA reprovado,Ambiente::HOM,Ambiente::HOM reprovado,Ambiente::Homologado,Ambiente::Retirada,Ambiente::Hotfix"
+
 espelhar() {   # iid rc: reescreve o label Ambiente::* (o label é só espelho)
   L=""
   case "$(estado "$2")" in
@@ -134,10 +137,11 @@ espelhar() {   # iid rc: reescreve o label Ambiente::* (o label é só espelho)
   esac
   case "$2:$L" in rc/hotfix-*:Ambiente::QA) L="Ambiente::Hotfix" ;; esac
   REM=""
-  for A in "Ambiente::QA" "Ambiente::QA reprovado" "Ambiente::HOM" "Ambiente::HOM reprovado" \
-           "Ambiente::Homologado" "Ambiente::Retirada" "Ambiente::Hotfix"; do
+  _ifs=$IFS; IFS=,
+  for A in $LABELS_AMBIENTE; do
     [ "$A" = "$L" ] || REM="${REM:+$REM,}$A"
   done
+  IFS=$_ifs
   pr_rotular "$1" "$L" "$REM"
 }
 

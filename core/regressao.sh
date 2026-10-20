@@ -28,15 +28,18 @@ tem "$HOM_TAG" || recusa "a tag $HOM_TAG não existe."
 [ "$(deploy_ultimo hom)" = "$HOM_TAG success" ] || recusa "$HOM_TAG não está verificada na HOM (último deployment: $(deploy_ultimo hom))."
 
 if [ "$RESULTADO" = falhou ]; then
-  pr_comentar "$ISSUE" "❌ Regressão de \`$HOM_TAG\` **falhou** (registrada por @$QUEM). Reprove a entrega culpada com /reprovar-hom e monte a release de novo." || true
+  issue_comentar "$ISSUE" "❌ Regressão de \`$HOM_TAG\` **falhou** (registrada por @$QUEM). Reprove a entrega culpada com /reprovar-hom e monte a release de novo." || true
   echo "Regressão de $HOM_TAG registrada como falhou (nenhuma tag criada)."
   exit 0
 fi
 
-if tem "regressao-ok/$HOM_TAG"; then
+# idempotência: vale o que está na origin (uma tag só local, de uma tentativa que falhou, é refeita)
+NA_ORIGIN=$(git ls-remote --tags origin "refs/tags/regressao-ok/$HOM_TAG") || para "não foi possível consultar as tags de origin."
+if [ -n "$NA_ORIGIN" ]; then
   echo "regressao-ok/$HOM_TAG já registrada."
   exit 0
 fi
+if tem "regressao-ok/$HOM_TAG"; then git tag -d "regressao-ok/$HOM_TAG" > /dev/null; fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 trap 'exit 1' INT TERM
@@ -46,6 +49,10 @@ trap 'exit 1' INT TERM
 } > "$TMP/msg"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
 git $BOT tag -a --cleanup=verbatim "regressao-ok/$HOM_TAG" "$HOM_TAG^{commit}" -F "$TMP/msg"
-git push -q origin "refs/tags/regressao-ok/$HOM_TAG"
-pr_comentar "$ISSUE" "✅ Regressão de \`$HOM_TAG\` **OK** (registrada por @$QUEM). O Release Manager já pode criar a versão." || true
+if ! git push -q origin "refs/tags/regressao-ok/$HOM_TAG"; then
+  git tag -d "regressao-ok/$HOM_TAG" > /dev/null
+  echo "⛔ Regressão recusada: não foi possível enviar regressao-ok/$HOM_TAG." >&2
+  exit 1
+fi
+issue_comentar "$ISSUE" "✅ Regressão de \`$HOM_TAG\` **OK** (registrada por @$QUEM). O Release Manager já pode criar a versão." || true
 echo "regressao-ok/$HOM_TAG registrada."

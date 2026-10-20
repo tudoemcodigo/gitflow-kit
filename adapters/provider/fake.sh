@@ -2,6 +2,8 @@
 # shellcheck disable=SC2016  # $var dentro de filtros jq nao e expansao de shell
 # Provider FAKE: implementa o contrato §3.2 com estado em arquivos JSON.
 # Carregado com `.` pelo core e pelos testes. Requer FAKE_DIR e jq.
+# Contrato (notas): release_criar e idempotente (release ja existente para a TAG = sucesso);
+# issue_comentar NUM TEXTO comenta numa issue; pr_comentarios IID lista os comentarios do PR.
 
 # jq em modo binario: no Windows (Git Bash) o jq emitiria CRLF e quebraria comparacoes.
 _fjq() { command jq -b "$@"; }
@@ -89,6 +91,25 @@ pr_listar_abertos() {
   done | sort -n
 }
 
+# pr_comentarios IID : imprime os comentarios do PR (texto puro; para checar marcadores com grep -F)
+pr_comentarios() {
+  _fjq -r '.comments[]' "$(_fake_prf "$1")"
+}
+
+# issue_comentar NUM TEXTO
+issue_comentar() {
+  _fake_init
+  mkdir -p "$FAKE_DIR/issue"
+  _ic_f="$FAKE_DIR/issue/$1.json"
+  [ -f "$_ic_f" ] || echo '{"comments":[]}' > "$_ic_f"
+  _fake_jq "$_ic_f" --arg t "$2" '.comments += [$t]'
+}
+
+# fake_issue_comentarios NUM : imprime os comentarios da issue
+fake_issue_comentarios() {
+  _fjq -r '.comments[]' "$FAKE_DIR/issue/$1.json"
+}
+
 # pr_comentar IID TEXTO
 pr_comentar() {
   _fake_jq "$(_fake_prf "$1")" --arg t "$2" '.comments += [$t]'
@@ -110,7 +131,7 @@ pr_fechar() {
 # branch_apagar NOME
 branch_apagar() {
   _fake_init
-  printf '%s\n' "$1" >> "$FAKE_DIR/branches_apagadas.txt"
+  printf '%s\n' "$1" >> "$FAKE_DIR/branches_apagadas.txt" || return 1
   if [ -n "${ORIGIN:-}" ] && [ -d "$ORIGIN" ]; then
     git --git-dir="$ORIGIN" update-ref -d "refs/heads/$1" 2>/dev/null || true
   fi

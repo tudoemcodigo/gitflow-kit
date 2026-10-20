@@ -32,6 +32,20 @@ VER=${TITULO#Hotfix }
 echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || recusa "versão inválida no título de $QA_TAG: $VER."
 ID="hotfix-$(echo "$VER" | tr . -)"
 
+SHA=$(git rev-parse "$QA_TAG^{commit}")
+# idempotência (antes das checagens de estado, que mudam depois): vale a hom.* "Hotfix X" que está na origin;
+# uma só local, de uma tentativa que falhou, é apagada e refeita
+for H in $(git tag --points-at "$SHA" -l 'hom.*' --sort=creatordate); do
+  [ "$(assunto "$H")" = "Hotfix $VER" ] || continue
+  NA_ORIGIN=$(git ls-remote --tags origin "refs/tags/$H") || para "não foi possível consultar as tags de origin."
+  if [ -n "$NA_ORIGIN" ]; then
+    echo "$H já existe para $QA_TAG." >&2
+    echo "$H"
+    exit 0
+  fi
+  git tag -d "$H" > /dev/null
+done
+
 # a build precisa estar publicada e verificada no QA (mesma regra do decidir)
 [ "$(publicada qa || true)" = "$QA_TAG" ] || recusa "$QA_TAG não está publicada no QA."
 [ "$(deploy_ultimo qa)" = "$QA_TAG success" ] || recusa "$QA_TAG não está verificada no QA (último deployment: $(deploy_ultimo qa))."
@@ -42,16 +56,6 @@ RC=$(printf '%s\n' "$MANIF" | awk -v p="rc/$ID." 'index($1, p) == 1 {print $1; e
 [ -n "$RC" ] || recusa "o manifesto de $QA_TAG não tem a entrega rc/$ID.N."
 [ "$(ultima_rc "$ID")" = "$RC" ] || recusa "$RC não é a última entrega do MR (existe $(ultima_rc "$ID"))."
 [ "$(estado "$RC")" = qa-ok ] || recusa "$RC não tem qa-ok (estado: $(estado "$RC")); use /aprovar antes."
-
-SHA=$(git rev-parse "$QA_TAG^{commit}")
-# idempotência: já existe uma hom.* "Hotfix X" neste commit
-for H in $(git tag --points-at "$SHA" -l 'hom.*' --sort=creatordate); do
-  if [ "$(assunto "$H")" = "Hotfix $VER" ]; then
-    echo "$H já existe para $QA_TAG." >&2
-    echo "$H"
-    exit 0
-  fi
-done
 
 DATA=$(date +%F)
 N=$(git tag -l "hom.$DATA.*" | awk -F. '{print $NF}' | sort -n | tail -1)
@@ -66,6 +70,9 @@ trap 'exit 1' INT TERM
 } > "$TMP/msg"
 # shellcheck disable=SC2086  # $BOT são opções -c separadas por espaço
 git $BOT tag -a --cleanup=verbatim "$HOM" "$SHA" -F "$TMP/msg"
-git push -q origin "refs/tags/$HOM" >&2
+if ! git push -q origin "refs/tags/$HOM" >&2; then
+  git tag -d "$HOM" > /dev/null
+  recusa "não foi possível enviar $HOM."
+fi
 echo "$HOM criada no commit de $QA_TAG." >&2
 echo "$HOM"

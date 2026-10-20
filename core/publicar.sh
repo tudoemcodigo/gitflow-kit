@@ -14,7 +14,7 @@ TAG=$1
 
 git fetch --quiet --force --tags origin '+refs/heads/*:refs/remotes/origin/*' || para "publicar: não foi possível buscar tags e branches de origin."
 
-case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) para "publicar: $TAG não é uma versão vX.Y.Z." ;; esac
+echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || para "publicar: $TAG não é uma versão vX.Y.Z."
 tem "$TAG" || para "publicar: a tag $TAG não existe."
 SHA=$(git rev-parse "$TAG^{commit}")
 VER=${TAG#v}
@@ -30,8 +30,8 @@ falha() { echo "publicar: $*" >&2; echo "$*" >> "$TMP/falhas"; }
 
 # ---------- main por fast-forward ----------
 git rev-parse -q --verify refs/remotes/origin/main > /dev/null || para "publicar: a ref origin/main não existe."
-if [ "$(git rev-parse origin/main)" = "$SHA" ]; then
-  echo "main já está em $TAG."
+if git merge-base --is-ancestor "$SHA" origin/main; then
+  echo "main já contém $TAG."
 else
   git merge-base --is-ancestor origin/main "$SHA" || para "publicar: a main atual não é ancestral de $TAG; fast-forward impossível (sem force)."
   git push -q origin "$SHA:refs/heads/main" || para "publicar: não foi possível mover a main para $TAG."
@@ -49,19 +49,26 @@ while read -r IID SRC _; do
   RC=$(ultima_rc "$ID")
   [ -n "$RC" ] || continue
   if git merge-base --is-ancestor "$RC^{commit}" "$SHA"; then
-    pr_rotular "$IID" "Ambiente::PRD" "Ambiente::QA,Ambiente::QA reprovado,Ambiente::HOM,Ambiente::HOM reprovado,Ambiente::Homologado,Ambiente::Retirada,Ambiente::Hotfix" || falha "rótulo do MR !$IID"
-    pr_comentar "$IID" "🚀 **$RC** foi publicada em PRD na versão **$TAG**. MR encerrado." || falha "comentário do MR !$IID"
-    branch_apagar "$SRC" || falha "apagar a branch $SRC"
-    pr_fechar "$IID" || falha "fechar o MR !$IID"
+    # o MR só fecha se os passos anteriores deram certo (senão a próxima rodada ainda o encontra aberto)
+    OK=sim
+    pr_rotular "$IID" "Ambiente::PRD" "$LABELS_AMBIENTE" || { falha "rótulo do MR !$IID"; OK=nao; }
+    pr_comentar "$IID" "🚀 **$RC** foi publicada em PRD na versão **$TAG**. MR encerrado." || { falha "comentário do MR !$IID"; OK=nao; }
+    branch_apagar "$SRC" || { falha "apagar a branch $SRC"; OK=nao; }
+    if [ "$OK" = sim ]; then pr_fechar "$IID" || falha "fechar o MR !$IID"; fi
     continue
   fi
-  # entrega mais nova que a publicada: o MR segue aberto, com aviso, se uma anterior foi publicada
+  # entrega mais nova que a publicada: o MR segue aberto, com aviso (uma vez só), se uma anterior foi publicada
   PUBLICADA=""
   for T in $(git tag -l "rc/$ID.*"); do
     if git merge-base --is-ancestor "$T^{commit}" "$SHA"; then PUBLICADA=$T; fi
   done
   if [ -n "$PUBLICADA" ]; then
-    pr_comentar "$IID" "⚠️ **$PUBLICADA** foi publicada em PRD na versão **$TAG**, mas existe uma entrega mais nova (**$RC**) que não entrou. O MR continua aberto." || falha "aviso do MR !$IID"
+    MARCA="<!-- gitflow:aviso:$TAG:$RC -->"
+    COMENTS=$(pr_comentarios "$IID") || { falha "ler os comentários do MR !$IID"; continue; }
+    if ! printf '%s
+' "$COMENTS" | grep -qF "$MARCA"; then
+      pr_comentar "$IID" "⚠️ **$PUBLICADA** foi publicada em PRD na versão **$TAG**, mas existe uma entrega mais nova (**$RC**) que não entrou. O MR continua aberto. $MARCA" || falha "aviso do MR !$IID"
+    fi
   fi
 done < "$TMP/abertos"
 

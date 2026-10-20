@@ -72,3 +72,15 @@ setup() { setup_repo; }
   run git -C "$ORIGIN" rev-parse --verify -q refs/heads/feature/PROJ-5-z
   [ "$status" -ne 0 ]
 }
+
+@test "issue_comentar, pr_comentarios e release_criar idempotente" {
+  issue_comentar 7 "primeiro"
+  issue_comentar 7 "segundo"
+  [ "$(fake_issue_comentarios 7 | paste -sd,)" = "primeiro,segundo" ]
+  fake_pr 12 feature/PROJ-102-x dev1
+  pr_comentar 12 "um"
+  [ "$(pr_comentarios 12)" = "um" ]
+  release_criar v1.2.0 "a"
+  release_criar v1.2.0 "b"
+  [ "$(jq length "$FAKE_DIR/releases.json")" -eq 1 ]
+}

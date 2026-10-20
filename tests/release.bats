@@ -61,6 +61,12 @@ reg() { BUILD_USER_ID="${USUARIO:-qa1}" rodar regressao.sh "$@"; }
 rel() { BUILD_USER_ID="${USUARIO:-rm1}" rodar criar-release.sh "$@"; }
 hotp() { BUILD_USER_ID="${USUARIO:-rm1}" rodar promover-hotfix.sh "$@"; }
 pub() { rodar publicar.sh "$@"; }
+# hook_recusa_tag PADRAO: o origin recusa o push de refs que casam com o padrao
+hook_recusa_tag() {
+  printf '%s
+' '#!/bin/sh' 'while read -r _o _n ref; do' "  case \"\$ref\" in $1) echo recusado >&2; exit 1 ;; esac" 'done' > "$ORIGIN/hooks/pre-receive"
+  chmod +x "$ORIGIN/hooks/pre-receive"
+}
 # hotp_so QA_TAG: so o stdout do promover-hotfix.sh (a tag impressa), em $saida
 hotp_so() {
   saida=$(BUILD_USER_ID="${USUARIO:-rm1}" PATH="$KIT_DIR/core:$PATH" sh -c 'cd "$1" && shift && exec "$@" 2> /dev/null' _ "$WORK" sh "$KIT_DIR/core/promover-hotfix.sh" "$@")
@@ -110,6 +116,7 @@ prd_v110() {
   publica_amb hom hom.2026-01-01.1 running
   reg hom.2026-01-01.1 ok 7
   assert_failure
+  assert_output --partial "não está verificada"
   ! tem_tag regressao-ok/hom.2026-01-01.1 || false
 }
 
@@ -122,7 +129,7 @@ prd_v110() {
   tem_tag regressao-ok/hom.2026-01-01.1
   msg_tag regressao-ok/hom.2026-01-01.1 | grep -F 'qa1'
   msg_tag regressao-ok/hom.2026-01-01.1 | grep -F '7'
-  fake_comentarios 7 | grep -F 'hom.2026-01-01.1'
+  fake_issue_comentarios 7 | grep -F 'hom.2026-01-01.1'
 }
 
 @test "regressao so para o grupo QA" {
@@ -131,6 +138,7 @@ prd_v110() {
   publica_amb hom hom.2026-01-01.1
   USUARIO=dev1 reg hom.2026-01-01.1 ok 7
   assert_failure
+  assert_output --partial "não pertence a"
   ! tem_tag regressao-ok/hom.2026-01-01.1 || false
 }
 
@@ -141,7 +149,7 @@ prd_v110() {
   reg hom.2026-01-01.1 falhou 7
   assert_success
   ! tem_tag regressao-ok/hom.2026-01-01.1 || false
-  fake_comentarios 7 | grep -F 'falhou'
+  fake_issue_comentarios 7 | grep -F 'falhou'
 }
 
 @test "regressao repetida nao cria outra tag nem falha" {
@@ -152,11 +160,42 @@ prd_v110() {
   assert_success
   reg hom.2026-01-01.1 ok 7
   assert_success
+  assert_output --partial "já registrada"
+  [ "$(git -C "$ORIGIN" tag -l 'regressao-ok/*' | wc -l)" -eq 1 ]
+  [ "$(fake_issue_comentarios 7 | wc -l)" -eq 1 ]
+}
+
+@test "regressao com push de tag recusado nao deixa tag local e a repeticao refaz" {
+  entrega ABC-1 qa-ok hom-ok
+  montar_amb hom "Release 1.1.0" hom.2026-01-01.1 rc/ABC-1.1
+  publica_amb hom hom.2026-01-01.1
+  hook_recusa_tag 'refs/tags/regressao-ok/*'
+  reg hom.2026-01-01.1 ok 7
+  assert_failure
+  assert_output --partial "não foi possível enviar"
+  ! git -C "$WORK" rev-parse -q --verify refs/tags/regressao-ok/hom.2026-01-01.1 || false
+  ! tem_tag regressao-ok/hom.2026-01-01.1 || false
+  rm -f "$ORIGIN/hooks/pre-receive"
+  reg hom.2026-01-01.1 ok 7
+  assert_success
+  tem_tag regressao-ok/hom.2026-01-01.1
+}
+
+@test "regressao com tag so local (sobra antiga) e reenviada" {
+  entrega ABC-1 qa-ok hom-ok
+  montar_amb hom "Release 1.1.0" hom.2026-01-01.1 rc/ABC-1.1
+  publica_amb hom hom.2026-01-01.1
+  git -C "$WORK" tag -a regressao-ok/hom.2026-01-01.1 -m sobra
+  ! tem_tag regressao-ok/hom.2026-01-01.1 || false
+  reg hom.2026-01-01.1 ok 7
+  assert_success
+  tem_tag regressao-ok/hom.2026-01-01.1
 }
 
 @test "regressao com resultado invalido recusa" {
   reg hom.2026-01-01.1 talvez 7
   assert_failure
+  assert_output --partial "resultado inválido"
 }
 
 # ---------- criar-release ----------
@@ -182,6 +221,7 @@ prd_v110() {
   release_pronta
   USUARIO=qa1 rel 1.1.0 hom.2026-01-01.1 7
   assert_failure
+  assert_output --partial "não pertence a"
   ! tem_tag v1.1.0 || false
 }
 
@@ -189,8 +229,10 @@ prd_v110() {
   release_pronta
   rel 1.1 hom.2026-01-01.1 7
   assert_failure
+  assert_output --partial "versão inválida"
   rel v1.1.0 hom.2026-01-01.1 7
   assert_failure
+  assert_output --partial "versão inválida"
 }
 
 @test "release com hom nao publicada agora recusa" {
@@ -291,12 +333,14 @@ hotfix_qa() {
   git -C "$WORK" push -q origin --tags
   hotp qa.2026-01-01.1
   assert_failure
+  assert_output --partial "não é a última entrega"
 }
 
 @test "promover hotfix so para release manager" {
   hotfix_qa qa-ok
   USUARIO=qa1 hotp qa.2026-01-01.1
   assert_failure
+  assert_output --partial "não pertence a"
 }
 
 @test "promover hotfix duas vezes devolve a mesma hom" {
@@ -306,6 +350,41 @@ hotfix_qa() {
   hotp_so qa.2026-01-01.1
   [ -n "$primeira" ]
   [ "$saida" = "$primeira" ]
+  [ "$(git -C "$ORIGIN" tag -l 'hom.*' | wc -l)" -eq 1 ]
+}
+
+@test "promover hotfix repetido depois do hom-ok e do QA remontado devolve a mesma hom" {
+  hotfix_qa qa-ok
+  hotp_so qa.2026-01-01.1
+  primeira="$saida"
+  git -C "$WORK" tag -a hom-ok/hotfix-1-0-1.1 -m x "rc/hotfix-1-0-1.1^{commit}"
+  git -C "$WORK" push -q origin --tags
+  git -C "$WORK" checkout -q --detach origin/main
+  git -C "$WORK" commit -q --allow-empty -m outra
+  git -C "$WORK" tag -a --cleanup=verbatim qa.2026-01-01.2 -m "Build qa"
+  publica_amb qa qa.2026-01-01.2
+  hotp_so qa.2026-01-01.1
+  [ "$saida" = "$primeira" ]
+}
+
+@test "promover hotfix com push recusado nao deixa tag local e a repeticao funciona" {
+  hotfix_qa qa-ok
+  hook_recusa_tag 'refs/tags/hom.*'
+  hotp qa.2026-01-01.1
+  assert_failure
+  assert_output --partial "não foi possível enviar"
+  [ -z "$(git -C "$WORK" tag -l 'hom.*')" ]
+  rm -f "$ORIGIN/hooks/pre-receive"
+  hotp_so qa.2026-01-01.1
+  tem_tag "$saida"
+}
+
+@test "promover hotfix com hom so local (sobra antiga) e refeita na origin" {
+  hotfix_qa qa-ok
+  git -C "$WORK" tag -a --cleanup=verbatim hom.2026-01-01.9 -m "Hotfix 1.0.1" qa.2026-01-01.1
+  hotp_so qa.2026-01-01.1
+  tem_tag "$saida"
+  [ -z "$(git -C "$WORK" tag -l 'hom.2026-01-01.9')" ]
 }
 
 # ---------- publicar ----------
@@ -366,6 +445,9 @@ estado_pub() {
   assert_success
   [ "$(jq -r .state "$FAKE_DIR/pr/1.json")" = opened ]
   fake_comentarios 1 | grep -F 'rc/ABC-1.2'
+  pub v1.1.0
+  assert_success
+  [ "$(fake_comentarios 1 | grep -cF 'rc/ABC-1.2')" -eq 1 ]
   ! grep -Fx 'feature/ABC-1-x' "$FAKE_DIR/branches_apagadas.txt" || false
   [ "$(git -C "$ORIGIN" rev-parse refs/heads/main)" = "$(git -C "$ORIGIN" rev-parse 'v1.1.0^{commit}')" ]
 }
@@ -383,6 +465,7 @@ estado_pub() {
   rel 1.1.0 hom.2026-01-01.1 7
   pub v1.1.0
   assert_failure
+  assert_output --partial "não é a versão em PRD"
   [ "$(git -C "$ORIGIN" rev-parse refs/heads/main)" != "$(git -C "$ORIGIN" rev-parse 'v1.1.0^{commit}')" ]
 }
 
@@ -399,6 +482,7 @@ estado_pub() {
   antes=$(git -C "$ORIGIN" rev-parse refs/heads/main)
   pub v1.1.0
   assert_failure
+  assert_output --partial "fast-forward impossível"
   [ "$(git -C "$ORIGIN" rev-parse refs/heads/main)" = "$antes" ]
 }
 
@@ -465,4 +549,29 @@ prd_antes_do_registrar() {
   [ "$(deploy_ultimo prd)" = "v1.1.0 success" ]
   [ "$(git -C "$ORIGIN" rev-parse refs/heads/main)" != "$(git -C "$ORIGIN" rev-parse 'v1.1.0^{commit}')" ]
   [ -z "$(cd "$WORK" && sh "$KIT_DIR/core/lock.sh" dono ambiente-prd)" ]
+}
+
+@test "publicar com a main ja contendo a versao segue e conclui o resto" {
+  prd_v110
+  git -C "$WORK" push -q origin "v1.1.0^{commit}:refs/heads/main"
+  pub v1.1.0
+  assert_success
+  assert_output --partial "main já contém"
+  [ "$(jq -r .state "$FAKE_DIR/pr/1.json")" = closed ]
+  [ "$(jq length "$FAKE_DIR/releases.json")" -eq 1 ]
+}
+
+@test "publicar com versao fora do padrao estrito recusa" {
+  prd_v110
+  pub v1.1.0x
+  assert_failure
+  assert_output --partial "não é uma versão vX.Y.Z"
+}
+
+@test "publicar nao fecha o MR se o passo anterior falhou" {
+  prd_v110
+  mkdir "$FAKE_DIR/branches_apagadas.txt"   # branch_apagar do fake passa a falhar
+  pub v1.1.0
+  assert_failure
+  [ "$(jq -r .state "$FAKE_DIR/pr/1.json")" = opened ]
 }
